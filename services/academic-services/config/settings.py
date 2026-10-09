@@ -81,7 +81,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        # Shared physical database approved for this project. Academic-service
+        # remains logically limited to its own tables and never queries Users.
+        'NAME': BASE_DIR.parent.parent / 'database' / 'DB_ProjectManagerment.db',
     }
 }
 

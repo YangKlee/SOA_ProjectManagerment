@@ -25,6 +25,10 @@ Departments, Majors, Sub-majors (specializations), and Students.
 - Create a separate Git commit for each implemented manager app, including its
   model, serializer DTOs, view, routes, tests, and migration. Shared academic
   configuration will be committed with the first app that needs it.
+- Configure academic-service to use the repository shared SQLite database at
+  `database/DB_ProjectManagerment.db`, matching auth-service's physical
+  database location. Academic-service retains logical ownership of its own
+  tables and must not query auth-service's `Users` table.
 
 ## Proposed data model assumptions
 
@@ -44,7 +48,10 @@ Departments, Majors, Sub-majors (specializations), and Students.
 - Use JSON DTOs through DRF serializers; do not expose models directly.
 - Use safe standard REST status codes and no sensitive data in responses.
 - Do not change fixed service ports, gateway prefixes, dependencies,
-  infrastructure, or unrelated services.
+  dependencies, infrastructure, or unrelated services.
+- A shared physical database is an explicit user-approved exception to the
+  normal database-per-service SOA guideline. It does not authorize direct
+  cross-service ORM access: each service remains limited to its owned tables.
 - `auth-service` already issues access tokens containing `user_id`, `email`,
   and `role`. The academic service will validate token signature and expiry
   locally; it will not query the auth-service database or call `/me/` per
@@ -111,6 +118,10 @@ data loss. Every endpoint listed in the table requires a bearer access token.
 
 - Initial migrations introduce schema artifacts; they must be reviewed and
   committed with the code.
+- SQLite permits only limited concurrent writes. Sharing its single file
+  between independently running services can cause locking contention and
+  couples backup/restore operations. A production deployment should prefer a
+  server database with separate schemas/credentials, or separate databases.
 - Deleting a Department/Major with dependent objects needs an explicit
   protection policy; the planned implementation will use `PROTECT` and surface
   a safe validation response rather than cascade-delete academic records.

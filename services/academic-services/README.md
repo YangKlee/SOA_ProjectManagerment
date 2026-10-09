@@ -4,6 +4,15 @@ Academic Service owns departments, majors, sub-majors, students, and topics.
 This implementation exposes CRUD APIs for the first four resources at port
 `8002`. Through the API Gateway, prepend `/academic` to every service path.
 
+## Database boundary
+
+For the current project, academic-service and auth-service use the shared
+physical SQLite file `database/DB_ProjectManagerment.db`. This is a project
+exception: academic-service owns and accesses only its academic tables; it must
+never query or mutate auth-service's `Users` table. SQLite has limited support
+for concurrent writers, so production should use separate schemas/credentials
+on a server database or separate databases.
+
 ## JWT authorization
 
 Set `JWT_SIGNING_KEY` to the exact same secret used by `auth-service`. Do not
