@@ -14,6 +14,22 @@
 3. Restore `database/DB_ProjectManagerment.db` from the verified
    `DB_ProjectManagerment.pre-academic-migration-20261009.db` backup to remove
    the code-first academic tables and migration history created in error.
+4. Create `services/topic-service` as an independent Django service, including
+   an isolated `venv`, `manage.py`, config package, service README, `.env.example`,
+   copied `requirements.txt` from academic-service, and the `topic_manager`
+   Django app (display name `topic-manager`).
+5. Configure the service for port `8004`, register the future Consul identity
+   `topic-service`, and add a public `GET /health/` endpoint. Update the root
+   architecture documentation, gateway routing, and CI only after their
+   corresponding integration is explicitly planned and approved.
+6. Add a database-first `Topic` mapping to existing `Topics` with
+   `Meta.managed = False`; do not create or run migrations. `MajorId` and
+   `AdvisorId` remain opaque IDs.
+7. Add explicit request/response DTOs, JWT authentication, and a Topic CRUD
+   API. Read requires authentication; write requires JWT `role: 1`, matching
+   the academic-service policy.
+8. Add tests for health, JWT authorization, DTO validation, and database-first
+   mappings. Run Django check/tests using topic-service's own environment.
 2. Inspect the restored database schema read-only and record existing academic
    table names, primary keys, columns, relationships, and constraints.
    Result: map public `departments` to `Faculties`, `majors` to `Majors`,
@@ -59,6 +75,8 @@
 
 - `.agents/task.md`, `.agents/plan.md`
 - `AGENTS.md`
+- `services/topic-service/**`
+- `services/academic-services/requirements.txt` (source only; unchanged)
 - `services/auth-service/config/settings.py`, `.env.example`
 - `services/academic-services/config/settings.py`, `config/urls.py`
 - `services/academic-services/config/settings.py` (shared database path)
