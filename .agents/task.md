@@ -7,7 +7,9 @@ Departments, Majors, Sub-majors (specializations), and Students.
 
 ## Scope
 
-- Add owned academic-service data models and their initial migrations.
+- Use database-first Django model mappings for the existing academic tables in
+  `database/DB_ProjectManagerment.db`; do not create or apply academic schema
+  migrations.
 - Add explicit DRF serializers, viewsets, and app URL modules.
 - Expose the APIs beneath the academic-service path `/api/` (the API
   Gateway's existing `/academic/*` prefix forwards requests to this service).
@@ -32,11 +34,16 @@ Departments, Majors, Sub-majors (specializations), and Students.
 
 ## Proposed data model assumptions
 
-- `Department`: unique `code`, `name`.
-- `Major`: unique `code`, `name`, required FK to `Department`.
-- `SubMajor`: unique `code`, `name`, required FK to `Major`.
-- `Student`: unique `student_code`, `full_name`, `email`, optional `phone`,
-  required FK to `Major`, optional FK to `SubMajor`.
+- The inspected database-first schema maps public resource `departments` to
+  existing table `Faculties` (`FacultyId`, `FacultyName`); this mapping is a
+  naming adaptation, not a new database table.
+- `majors` maps to `Majors` (`MajorId`, `MajorName`, `FacultyId`).
+- `sub-majors` maps to `Specializations` (`SpecializationId`,
+  `SpecializationName`, `MajorId`).
+- `students` maps to `Students` (`StudentId`, `MajorId`, `SpecializationId`,
+  `AccumulatedCredits`, `GPA`). `StudentId` is the existing primary key and a
+  foreign key to `Users`; academic-service will treat it as an opaque ID and
+  will not query the `Users` table.
 - The existing app spelling `DeparmentManager` is preserved to avoid breaking
   repository imports; its public API resource is correctly spelled
   `departments`.
@@ -116,8 +123,9 @@ data loss. Every endpoint listed in the table requires a bearer access token.
 
 ## Risks
 
-- Initial migrations introduce schema artifacts; they must be reviewed and
-  committed with the code.
+- The prior code-first migration implementation must be rolled back by
+  restoring the verified pre-migration database backup before database-first
+  mapping is introduced. No existing database schema may be altered.
 - SQLite permits only limited concurrent writes. Sharing its single file
   between independently running services can cause locking contention and
   couples backup/restore operations. A production deployment should prefer a
@@ -125,5 +133,6 @@ data loss. Every endpoint listed in the table requires a bearer access token.
 - Deleting a Department/Major with dependent objects needs an explicit
   protection policy; the planned implementation will use `PROTECT` and surface
   a safe validation response rather than cascade-delete academic records.
-- The precise student field set is inferred because the apps contain no model
-  definitions; additions beyond the proposed fields require a revised plan.
+- Public `departments` terminology differs from the table name `Faculties`,
+  which can be confusing for clients. The proposed compatibility mapping must
+  be explicitly approved before implementation.

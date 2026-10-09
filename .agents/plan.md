@@ -2,39 +2,48 @@
 
 ## Ordered implementation steps
 
-1. Configure academic-service's database connection to use
+1. Restore `database/DB_ProjectManagerment.db` from the verified
+   `DB_ProjectManagerment.pre-academic-migration-20261009.db` backup to remove
+   the code-first academic tables and migration history created in error.
+2. Inspect the restored database schema read-only and record existing academic
+   table names, primary keys, columns, relationships, and constraints.
+   Result: map public `departments` to `Faculties`, `majors` to `Majors`,
+   `sub-majors` to `Specializations`, and `students` to `Students`.
+3. Configure academic-service's database connection to use
    `database/DB_ProjectManagerment.db`, while preserving its model ownership
-   boundary and avoiding all auth-service table access. Do not run migrations
-   against the shared file until the configuration and migration plan are
-   explicitly approved.
-2. Establish a shared `JWT_SIGNING_KEY` environment configuration in
+   boundary and avoiding all auth-service table access.
+4. Replace code-first models with database-first mappings using `managed =
+   False`, explicit `db_table`/`db_column` values, string primary keys, and no
+   migration creation or application. `StudentId` remains an opaque ID and
+   must not cause a query to the `Users` table.
+5. Establish a shared `JWT_SIGNING_KEY` environment configuration in
    auth-service and academic-service, configure Simple JWT to use it, and add
    a non-committed example entry to each relevant environment template.
-3. Enable Django REST Framework and register the four existing academic apps.
+6. Enable Django REST Framework and register the four existing academic apps.
    Add an academic-service JWT authentication class that verifies signature and
    expiry locally and exposes token claims without querying auth-service.
    Add a reusable permission class that permits all authenticated callers to
    read and permits only the integer role claim `1` to write.
-4. Define models and integrity rules:
-   `Department -> Major -> SubMajor`, and `Student -> Major/SubMajor`.
-   Use protected foreign keys to prevent accidental destructive cascades.
-5. Generate and review initial migrations for the four apps.
-6. Add dedicated request and response DTO serializers (not direct model
+7. Define DTO validation for the existing hierarchy:
+   `Faculty -> Major -> Specialization`, and `Student -> Major/Specialization`.
+   Preserve database-side referential integrity; do not create/alter any
+   schema constraint.
+8. Add dedicated request and response DTO serializers (not direct model
    serialization), including validation that a supplied sub-major belongs to
    the student's supplied major.
-7. Add viewsets and per-app URL modules; mount them in `config/urls.py` under
+9. Add viewsets and per-app URL modules; mount them in `config/urls.py` under
    `/api/` with plural resources:
    `departments`, `majors`, `sub-majors`, and `students`.
-8. Add API tests for create/list/retrieve/update/delete, uniqueness and
+10. Add API tests for create/list/retrieve/update/delete, uniqueness and
    relationship validation, HTTP 404 behavior, missing/invalid JWT (`401`),
    read access for a valid non-1 role, and write denial for a valid JWT role
    other than `1` (`403`).
-9. Document endpoint methods, payload fields, relationships, required bearer
+11. Document endpoint methods, database-first field mappings, relationships, required bearer
    authentication and role `1`, plus error/status
    expectations.
-10. Run `python manage.py check` and `python manage.py test` from
+12. Run `python manage.py check` and `python manage.py test` from
    `services/academic-services`; report any pre-existing failures separately.
-11. Commit each manager app independently after its migration and tests pass;
+13. Commit each manager app independently after its mapping and tests pass;
     commit the academic-service API README after the app commits.
 
 ## Expected files to change
@@ -50,7 +59,8 @@
 - `services/academic-services/{DeparmentManager,MajorManager,SubMajorManager,StudentManager}/views.py`
 - `services/academic-services/{DeparmentManager,MajorManager,SubMajorManager,StudentManager}/urls.py`
 - `services/academic-services/{DeparmentManager,MajorManager,SubMajorManager,StudentManager}/tests.py`
-- Initial migration files in each of those apps
+- Existing academic migration files will be removed from source control; no new
+  migration files will be created for database-first mappings
 - `services/academic-services/README.md` (and root `README.md` only if route
   documentation needs extending)
 
@@ -63,12 +73,11 @@
 - Confirm any signed access token can read, only `role: 1` can write, another
   valid role receives `403` on writes, and malformed/expired tokens receive
   `401`.
-- Inspect the shared database schema before applying migrations; apply only the
-  four academic migrations and confirm no existing auth table is changed.
+- Confirm all mapped tables and columns match the restored shared database and
+  `makemigrations --check` reports no planned model migration.
 
 ## Rollback
 
-- Revert only the files listed above, including the initial migrations. Before
-  any migration on the shared database, take a verified backup of
-  `database/DB_ProjectManagerment.db`; restore that backup if the migration
-  must be rolled back.
+- Restore the pre-migration backup before any database-first work. No schema
+  migrations are permitted in this task; rollback code mappings through Git
+  commits without altering the shared database.

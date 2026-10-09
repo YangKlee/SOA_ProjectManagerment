@@ -2,11 +2,13 @@ from django.db import models
 
 
 class Department(models.Model):
-    code = models.CharField(max_length=20, unique=True)
-    name = models.CharField(max_length=255, unique=True)
+    department_id = models.CharField(db_column="FacultyId", primary_key=True, max_length=255)
+    name = models.TextField(db_column="FacultyName")
 
     class Meta:
-        ordering = ["code"]
+        managed = False
+        db_table = "Faculties"
+        ordering = ["department_id"]
 
     def __str__(self):
-        return f"{self.code} - {self.name}"
+        return f"{self.department_id} - {self.name}"
