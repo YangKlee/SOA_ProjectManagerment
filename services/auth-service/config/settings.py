@@ -149,13 +149,13 @@ CONSUL = {
     "AUTO_REGISTER": env_flag("CONSUL_AUTO_REGISTER"),
     "URL": os.getenv("CONSUL_URL", "http://localhost:8500"),
     "SERVICE_NAME": os.getenv("CONSUL_SERVICE_NAME", "auth-service"),
-    "SERVICE_ID": os.getenv("CONSUL_SERVICE_ID", "auth-service-8000"),
+    "SERVICE_ID": os.getenv("CONSUL_SERVICE_ID", "auth-service-8001"),
     # host.docker.internal lets a Consul container health-check Django running
     # directly on Windows.  Use the Docker service name when both are composed.
     "SERVICE_ADDRESS": os.getenv("CONSUL_SERVICE_ADDRESS", "host.docker.internal"),
-    "SERVICE_PORT": os.getenv("CONSUL_SERVICE_PORT", "8000"),
+    "SERVICE_PORT": os.getenv("CONSUL_SERVICE_PORT", "8001"),
     "HEALTH_CHECK_URL": os.getenv(
-        "CONSUL_HEALTH_CHECK_URL", "http://host.docker.internal:8000/health/"
+        "CONSUL_HEALTH_CHECK_URL", "http://host.docker.internal:8001/health/"
     ),
     "TOKEN": os.getenv("CONSUL_TOKEN"),
     "TIMEOUT_SECONDS": os.getenv("CONSUL_TIMEOUT_SECONDS", "3"),
