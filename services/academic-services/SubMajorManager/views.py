@@ -1,3 +1,6 @@
-from django.shortcuts import render
-
-# Create your views here.
+from security.crud import DatabaseFirstDetailView, DatabaseFirstListCreateView
+from .models import SubMajor
+from .serializers import SubMajorRequestDTO, SubMajorResponseDTO
+SubMajorResponseDTO.from_object = SubMajorResponseDTO.from_sub_major
+class SubMajorListCreateView(DatabaseFirstListCreateView): model=SubMajor; serializer_class=SubMajorRequestDTO; response_dto=SubMajorResponseDTO
+class SubMajorDetailView(DatabaseFirstDetailView): model=SubMajor; serializer_class=SubMajorRequestDTO; response_dto=SubMajorResponseDTO

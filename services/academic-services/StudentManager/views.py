@@ -1,3 +1,6 @@
-from django.shortcuts import render
-
-# Create your views here.
+from security.crud import DatabaseFirstDetailView, DatabaseFirstListCreateView
+from .models import Student
+from .serializers import StudentRequestDTO, StudentResponseDTO
+StudentResponseDTO.from_object = StudentResponseDTO.from_student
+class StudentListCreateView(DatabaseFirstListCreateView): model=Student; serializer_class=StudentRequestDTO; response_dto=StudentResponseDTO
+class StudentDetailView(DatabaseFirstDetailView): model=Student; serializer_class=StudentRequestDTO; response_dto=StudentResponseDTO

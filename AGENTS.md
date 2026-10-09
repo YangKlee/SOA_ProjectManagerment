@@ -88,8 +88,37 @@ documentation, tests, and CI.
 
 Each service owns its code and its data boundary. A service must never import
 another service's Django model, access another service's ORM, or directly query
-another service's database. Cross-service references are IDs and are validated
-through HTTP/REST contracts.
+tables owned by another service. Cross-service references are IDs and are
+validated through HTTP/REST contracts.
+
+### Approved shared-database exception
+
+This project permits services to share the physical database at
+`database/DB_ProjectManagerment.db`. This is a deployment/storage exception,
+not shared data ownership:
+
+- Each service may read and write only the tables it owns. For example,
+  academic-service must not query or mutate auth-service's `Users` table.
+- A service must not use another service's ORM model or rely on that service's
+  private schema details. Use IDs and HTTP/REST contracts across ownership
+  boundaries.
+- Before a schema change, inspect the existing database schema and document
+  table ownership, compatibility, backup, rollback, and SQLite locking risks
+  in the approved task and plan.
+- SQLite's shared-file write contention makes this suitable for this project
+  only; use separate schemas/credentials or separate databases in production.
+
+### Database-first mappings
+
+- Treat the shared database schema as the source of truth. Inspect it before
+  adding or changing Django models.
+- Map existing tables with explicit `db_table`, `db_column`, primary-key and
+  relationship metadata, and set `Meta.managed = False`.
+- Do not create or run schema-altering migrations for database-first mapped
+  tables unless a separately approved task explicitly authorizes the schema
+  change, backup procedure, and rollback plan.
+- Keep public JSON DTOs independent of model field names where needed; never
+  expose a model directly merely because it is database-first.
 
 ## SOA principles to enforce
 

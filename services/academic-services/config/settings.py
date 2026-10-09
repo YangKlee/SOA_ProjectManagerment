@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -37,6 +38,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'DeparmentManager.apps.DeparmentmanagerConfig',
+    'MajorManager.apps.MajormanagerConfig',
+    'SubMajorManager.apps.SubmajormanagerConfig',
+    'StudentManager.apps.StudentmanagerConfig',
 ]
 
 MIDDLEWARE = [
@@ -75,7 +81,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        # Shared physical database approved for this project. Academic-service
+        # remains logically limited to its own tables and never queries Users.
+        'NAME': BASE_DIR.parent.parent / 'database' / 'DB_ProjectManagerment.db',
     }
 }
 
@@ -115,6 +123,24 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+
+
+# Configure the same environment value as auth-service in every deployment.
+# SECRET_KEY is retained only as a local-development fallback.
+JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", SECRET_KEY)
+
+SIMPLE_JWT = {
+    "SIGNING_KEY": JWT_SIGNING_KEY,
+}
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "security.authentication.AcademicJWTAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+}
 
 
 # Email
