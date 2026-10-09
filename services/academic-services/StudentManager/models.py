@@ -5,12 +5,13 @@ from SubMajorManager.models import SubMajor
 
 
 class Student(models.Model):
-    student_code = models.CharField(max_length=30, unique=True)
-    full_name = models.CharField(max_length=255)
-    email = models.EmailField(unique=True)
-    phone = models.CharField(max_length=30, blank=True)
-    major = models.ForeignKey(Major, on_delete=models.PROTECT, related_name="students")
-    sub_major = models.ForeignKey(SubMajor, on_delete=models.PROTECT, related_name="students", null=True, blank=True)
+    student_id = models.CharField(db_column="StudentId", primary_key=True, max_length=255)
+    major = models.ForeignKey(Major, db_column="MajorId", on_delete=models.DO_NOTHING, related_name="students", db_constraint=False)
+    sub_major = models.ForeignKey(SubMajor, db_column="SpecializationId", on_delete=models.DO_NOTHING, related_name="students", null=True, blank=True, db_constraint=False)
+    accumulated_credits = models.IntegerField(db_column="AccumulatedCredits")
+    gpa = models.FloatField(db_column="GPA")
 
     class Meta:
-        ordering = ["student_code"]
+        managed = False
+        db_table = "Students"
+        ordering = ["student_id"]
