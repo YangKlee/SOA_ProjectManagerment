@@ -4,9 +4,11 @@ from MajorManager.models import Major
 
 
 class SubMajor(models.Model):
-    code = models.CharField(max_length=20, unique=True)
-    name = models.CharField(max_length=255, unique=True)
-    major = models.ForeignKey(Major, on_delete=models.PROTECT, related_name="sub_majors")
+    sub_major_id = models.CharField(db_column="SpecializationId", primary_key=True, max_length=255)
+    name = models.TextField(db_column="SpecializationName", blank=True, null=True)
+    major = models.ForeignKey(Major, db_column="MajorId", on_delete=models.DO_NOTHING, related_name="sub_majors", blank=True, null=True, db_constraint=False)
 
     class Meta:
-        ordering = ["code"]
+        managed = False
+        db_table = "Specializations"
+        ordering = ["sub_major_id"]
