@@ -5,11 +5,16 @@
 Implement protected Django REST Framework CRUD APIs in `academic-service` for
 Departments, Majors, Sub-majors (specializations), and Students.
 
+Update repository agent guidance to explicitly allow the project-approved
+shared physical database and database-first Django model mappings.
+
 ## Scope
 
 - Use database-first Django model mappings for the existing academic tables in
   `database/DB_ProjectManagerment.db`; do not create or apply academic schema
   migrations.
+- Update `AGENTS.md` with the approved exceptions and guardrails for shared
+  database use and database-first development.
 - Add explicit DRF serializers, viewsets, and app URL modules.
 - Expose the APIs beneath the academic-service path `/api/` (the API
   Gateway's existing `/academic/*` prefix forwards requests to this service).
@@ -59,6 +64,9 @@ Departments, Majors, Sub-majors (specializations), and Students.
 - A shared physical database is an explicit user-approved exception to the
   normal database-per-service SOA guideline. It does not authorize direct
   cross-service ORM access: each service remains limited to its owned tables.
+- Database-first mappings must set explicit `db_table`/`db_column` metadata and
+  `managed = False`; schema-altering migrations are prohibited unless a later
+  approved task explicitly authorizes them.
 - `auth-service` already issues access tokens containing `user_id`, `email`,
   and `role`. The academic service will validate token signature and expiry
   locally; it will not query the auth-service database or call `/me/` per

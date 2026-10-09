@@ -2,7 +2,12 @@
 
 ## Ordered implementation steps
 
-1. Restore `database/DB_ProjectManagerment.db` from the verified
+1. Update `AGENTS.md` with a project-specific shared database exception:
+   services may share the physical database file but retain exclusive logical
+   ownership of their tables, do not directly query other services' tables, and
+   use database-first unmanaged mappings unless an approved task authorizes a
+   schema change.
+2. Restore `database/DB_ProjectManagerment.db` from the verified
    `DB_ProjectManagerment.pre-academic-migration-20261009.db` backup to remove
    the code-first academic tables and migration history created in error.
 2. Inspect the restored database schema read-only and record existing academic
@@ -49,6 +54,7 @@
 ## Expected files to change
 
 - `.agents/task.md`, `.agents/plan.md`
+- `AGENTS.md`
 - `services/auth-service/config/settings.py`, `.env.example`
 - `services/academic-services/config/settings.py`, `config/urls.py`
 - `services/academic-services/config/settings.py` (shared database path)
