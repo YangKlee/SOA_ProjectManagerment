@@ -1,37 +1,46 @@
 from rest_framework.views import APIView
-from django.http import JsonResponse
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Users
+from .serializers import (
+    HealthResponseSerializer,
+    LoginRequestSerializer,
+    LoginResponseSerializer,
+    TokenRefreshRequestSerializer,
+    TokenRefreshResponseSerializer,
+    UserResponseSerializer,
+)
 
-def check_health(request):
-    return JsonResponse({"status": "ok"}, status=status.HTTP_200_OK)
+
+class HealthView(APIView):
+    """Public liveness endpoint for the API gateway and container checks."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        payload = {"status": "ok", "service": "auth-service"}
+        return Response(HealthResponseSerializer(payload).data, status=status.HTTP_200_OK)
+
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        identifier = request.data.get("identifier")
-        if identifier is None:
-            identifier = request.data.get("email") or request.data.get("userid")
-        password = request.data.get("password")
-
-        if not isinstance(identifier, str) or not identifier.strip() or not isinstance(password, str) or not password:
-            return Response(
-                {"detail": "Email/userid and password are required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        request_dto = LoginRequestSerializer(data=request.data)
+        request_dto.is_valid(raise_exception=True)
+        identifier = request_dto.validated_data["identifier"]
+        password = request_dto.validated_data["password"]
 
         try:
-            user = Users.objects.get(email=identifier.strip())
+            user = Users.objects.get(email=identifier)
         except Users.DoesNotExist:
             try:
-                user = Users.objects.get(userid=identifier.strip())
+                user = Users.objects.get(userid=identifier)
             except Users.DoesNotExist:
                 user = None
 
@@ -46,22 +55,22 @@ class LoginView(APIView):
         refresh["email"] = user.email
         refresh["role"] = user.role
 
-        return Response({
+        response_dto = LoginResponseSerializer({
             "access": str(refresh.access_token),
             "refresh": str(refresh),
+            "token_type": "Bearer",
+            "user": UserResponseSerializer(user).data,
         })
+        return Response(response_dto.data, status=status.HTTP_200_OK)
 
 
 class TokenRefreshView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        raw_refresh = request.data.get("refresh")
-        if not isinstance(raw_refresh, str) or not raw_refresh:
-            return Response(
-                {"detail": "Refresh token is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        request_dto = TokenRefreshRequestSerializer(data=request.data)
+        request_dto.is_valid(raise_exception=True)
+        raw_refresh = request_dto.validated_data["refresh"]
 
         try:
             refresh = RefreshToken(raw_refresh)
@@ -75,4 +84,16 @@ class TokenRefreshView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        return Response({"access": str(refresh.access_token)})
+        response_dto = TokenRefreshResponseSerializer(
+            {"access": str(refresh.access_token), "token_type": "Bearer"}
+        )
+        return Response(response_dto.data, status=status.HTTP_200_OK)
+
+
+class CurrentUserView(APIView):
+    """Return the authenticated user's safe profile DTO."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(UserResponseSerializer(request.user).data, status=status.HTTP_200_OK)
