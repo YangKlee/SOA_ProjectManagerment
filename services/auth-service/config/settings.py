@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -38,7 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'authentication',
+    'authentication.apps.AuthenticationConfig',
 ]
 
 MIDDLEWARE = [
@@ -135,4 +136,27 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+}
+
+
+def env_flag(name, default=False):
+    return os.getenv(name, str(default)).lower() in {"1", "true", "yes", "on"}
+
+
+# Auth service registers itself only when explicitly enabled.  This means
+# local Django commands still work when Consul is not running.
+CONSUL = {
+    "AUTO_REGISTER": env_flag("CONSUL_AUTO_REGISTER"),
+    "URL": os.getenv("CONSUL_URL", "http://localhost:8500"),
+    "SERVICE_NAME": os.getenv("CONSUL_SERVICE_NAME", "auth-service"),
+    "SERVICE_ID": os.getenv("CONSUL_SERVICE_ID", "auth-service-8000"),
+    # host.docker.internal lets a Consul container health-check Django running
+    # directly on Windows.  Use the Docker service name when both are composed.
+    "SERVICE_ADDRESS": os.getenv("CONSUL_SERVICE_ADDRESS", "host.docker.internal"),
+    "SERVICE_PORT": os.getenv("CONSUL_SERVICE_PORT", "8000"),
+    "HEALTH_CHECK_URL": os.getenv(
+        "CONSUL_HEALTH_CHECK_URL", "http://host.docker.internal:8000/health/"
+    ),
+    "TOKEN": os.getenv("CONSUL_TOKEN"),
+    "TIMEOUT_SECONDS": os.getenv("CONSUL_TIMEOUT_SECONDS", "3"),
 }
