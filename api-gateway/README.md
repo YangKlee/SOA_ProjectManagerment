@@ -1,41 +1,35 @@
 # API Gateway
 
-Gateway Nginx lắng nghe ở `http://localhost:8000` và chuyển tiếp request đến
-các Django service đang chạy trên máy chủ:
+Nginx API Gateway listens on `http://localhost:8000` and routes public requests
+to the independent Django services.
 
-| Gateway URL | Service đích |
+| Gateway URL | Target service |
 | --- | --- |
-| `/auth/*` | `http://localhost:8001/*` (auth-service) |
-| `/academic/*` | `http://localhost:8002/*` (academic-service) |
-| `/registrations/*` | `http://localhost:8003/*` (regist-service) |
+| `/auth/*` | `http://localhost:8001/*` — auth-service |
+| `/academic/*` | `http://localhost:8002/*` — academic-service |
+| `/registrations/*` | `http://localhost:8003/*` — regist-service |
+| `/topics/*` | `http://localhost:8004/*` — topic-service |
 
-## Chạy
+The gateway forwards `Authorization: Bearer <JWT>` to each target. Services
+validate JWT signature and expiry locally; the gateway does not own domain
+models or business logic.
 
-Chạy ba Django service trước:
+## Run
 
-```powershell
-cd services\auth-service; python manage.py runserver 8001
-cd services\academic-services; python manage.py runserver 8002
-cd services\regist-service; python manage.py runserver 8003
-```
-
-Sau đó, từ thư mục này:
+Start the backend services on ports 8001–8004, then run:
 
 ```powershell
+cd api-gateway
 docker compose up -d
 ```
 
-Kiểm tra gateway:
-
-```powershell
-Invoke-RestMethod http://localhost:8000/health/
-```
-
-Ví dụ đăng nhập qua gateway:
+Useful public routes include:
 
 ```text
-POST http://localhost:8000/auth/login/
+POST /auth/login/
+GET  /academic/api/students/
+GET  /topics/api/topics/
+GET  /registrations/
 ```
 
-Gateway chuyển tiếp header `Authorization: Bearer <JWT>` đến service đích.
-Mỗi service vẫn phải tự xác thực JWT cho các endpoint cần bảo vệ.
+Stop the gateway with `docker compose down`.

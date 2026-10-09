@@ -20,6 +20,9 @@ its own Python virtual environment and begin with an exact copy of
 The Django app inside this service will be named `topic-manager` (Python module
 `topic_manager`).
 
+Update the root README and API Gateway README to describe the architecture
+after Topic ownership moves to `topic-service`.
+
 ## Scope
 
 - Use database-first Django model mappings for the existing academic tables in
@@ -32,6 +35,9 @@ The Django app inside this service will be named `topic-manager` (Python module
 - Create a Django `topic-service` scaffold with its own configuration, health
   endpoint, database-first Topic mapping, and separate virtual environment.
 - Create the `topic_manager` Django app as the owner of Topic API code.
+- Update `README.md` and `api-gateway/README.md` with the topic-service port,
+  route, ownership boundary, shared database/database-first policy, and JWT
+  access expectations.
 - Copy the academic-service dependency manifest into topic-service without
   changing dependency versions.
 - Add explicit DRF serializers, viewsets, and app URL modules.

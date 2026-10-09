@@ -30,6 +30,9 @@
    the academic-service policy.
 8. Add tests for health, JWT authorization, DTO validation, and database-first
    mappings. Run Django check/tests using topic-service's own environment.
+9. Inspect the root and gateway READMEs, then update architecture diagrams,
+   service/port tables, ownership notes, and route documentation to include
+   topic-service.
 2. Inspect the restored database schema read-only and record existing academic
    table names, primary keys, columns, relationships, and constraints.
    Result: map public `departments` to `Faculties`, `majors` to `Majors`,
@@ -77,6 +80,8 @@
 - `AGENTS.md`
 - `services/topic-service/**`
 - `services/academic-services/requirements.txt` (source only; unchanged)
+- `README.md`
+- `api-gateway/README.md`
 - `services/auth-service/config/settings.py`, `.env.example`
 - `services/academic-services/config/settings.py`, `config/urls.py`
 - `services/academic-services/config/settings.py` (shared database path)
