@@ -8,6 +8,11 @@ Departments, Majors, Sub-majors (specializations), and Students.
 Update repository agent guidance to explicitly allow the project-approved
 shared physical database and database-first Django model mappings.
 
+Update the task-workflow rules so clearly scoped small changes do not require a
+task/plan document or user confirmation, while every substantial task uses its
+own directory under `.agents/tasks/<task-slug>/` containing `task.md` and
+`plan.md`.
+
 ## Scope
 
 - Use database-first Django model mappings for the existing academic tables in
@@ -15,6 +20,8 @@ shared physical database and database-first Django model mappings.
   migrations.
 - Update `AGENTS.md` with the approved exceptions and guardrails for shared
   database use and database-first development.
+- Update `AGENTS.md` with the task-size exception and per-task planning-folder
+  convention.
 - Add explicit DRF serializers, viewsets, and app URL modules.
 - Expose the APIs beneath the academic-service path `/api/` (the API
   Gateway's existing `/academic/*` prefix forwards requests to this service).
@@ -67,6 +74,10 @@ shared physical database and database-first Django model mappings.
 - Database-first mappings must set explicit `db_table`/`db_column` metadata and
   `managed = False`; schema-altering migrations are prohibited unless a later
   approved task explicitly authorizes them.
+- A small task means a narrowly scoped, low-risk change that does not alter
+  application behavior, API contracts, models/database/schema, dependencies,
+  infrastructure, security/authorization, CI, or documentation affecting users
+  or operators. If uncertain, treat the task as substantial.
 - `auth-service` already issues access tokens containing `user_id`, `email`,
   and `role`. The academic service will validate token signature and expiry
   locally; it will not query the auth-service database or call `/me/` per
