@@ -53,23 +53,23 @@ require the JWT claim `role` to equal the integer `1`.
 All requests and responses use explicit serializers; database models are not
 directly serialized.
 
-### Department
+### Department (`Faculties` table)
 
-Create/update request: `{ "code": "CNTT", "name": "Information Technology" }`
+Create/update request: `{ "department_id": "F01", "name": "Information Technology" }`
 
-Response: `{ "id": 1, "code": "CNTT", "name": "Information Technology" }`
+Response: `{ "department_id": "F01", "name": "Information Technology" }`
 
 ### Major
 
-Create/update request: `{ "code": "KTPM", "name": "Software Engineering", "department_id": 1 }`
+Create/update request: `{ "major_id": "KTPM", "name": "Software Engineering", "department_id": "F01" }`
 
-Response includes `id`, `code`, `name`, and `department_id`.
+Response includes `major_id`, `name`, and `department_id`.
 
 ### Sub-major
 
-Create/update request: `{ "code": "WEB", "name": "Web Development", "major_id": 1 }`
+Create/update request: `{ "sub_major_id": "WEB", "name": "Web Development", "major_id": "KTPM" }`
 
-Response includes `id`, `code`, `name`, and `major_id`.
+Response includes `sub_major_id`, `name`, and `major_id`.
 
 ### Student
 
@@ -77,21 +77,20 @@ Create/update request:
 
 ```json
 {
-  "student_code": "SV001",
-  "full_name": "Nguyen An",
-  "email": "an@example.com",
-  "phone": "0900000000",
-  "major_id": 1,
-  "sub_major_id": 1
+  "student_id": "SV001",
+  "major_id": "KTPM",
+  "sub_major_id": "WEB",
+  "accumulated_credits": 90,
+  "gpa": 3.4
 }
 ```
 
-`phone` and `sub_major_id` are optional. When present, `sub_major_id` must
+`sub_major_id` is optional. When present, `sub_major_id` must
 belong to the supplied `major_id`.
 
 ## Data integrity
 
-The hierarchy is `Department -> Major -> SubMajor`; a Student references a
+The database hierarchy is `Faculty -> Major -> Specialization`; a Student references a
 Major and may reference a SubMajor. Deleting a referenced Department, Major,
 or SubMajor is rejected with `400` instead of cascade-deleting academic data.
 
