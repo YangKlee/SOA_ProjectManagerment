@@ -13,6 +13,16 @@ task/plan document or user confirmation, while every substantial task uses its
 own directory under `.agents/tasks/<task-slug>/` containing `task.md` and
 `plan.md`.
 
+Create a standalone `services/topic-service` for Topic ownership. It will use
+its own Python virtual environment and begin with an exact copy of
+`services/academic-services/requirements.txt`.
+
+The Django app inside this service will be named `topic-manager` (Python module
+`topic_manager`).
+
+Update the root README and API Gateway README to describe the architecture
+after Topic ownership moves to `topic-service`.
+
 ## Scope
 
 - Use database-first Django model mappings for the existing academic tables in
@@ -22,6 +32,14 @@ own directory under `.agents/tasks/<task-slug>/` containing `task.md` and
   database use and database-first development.
 - Update `AGENTS.md` with the task-size exception and per-task planning-folder
   convention.
+- Create a Django `topic-service` scaffold with its own configuration, health
+  endpoint, database-first Topic mapping, and separate virtual environment.
+- Create the `topic_manager` Django app as the owner of Topic API code.
+- Update `README.md` and `api-gateway/README.md` with the topic-service port,
+  route, ownership boundary, shared database/database-first policy, and JWT
+  access expectations.
+- Copy the academic-service dependency manifest into topic-service without
+  changing dependency versions.
 - Add explicit DRF serializers, viewsets, and app URL modules.
 - Expose the APIs beneath the academic-service path `/api/` (the API
   Gateway's existing `/academic/*` prefix forwards requests to this service).
@@ -78,6 +96,10 @@ own directory under `.agents/tasks/<task-slug>/` containing `task.md` and
   application behavior, API contracts, models/database/schema, dependencies,
   infrastructure, security/authorization, CI, or documentation affecting users
   or operators. If uncertain, treat the task as substantial.
+- topic-service owns the existing `Topics` table in the shared database;
+  academic-service must stop owning or directly accessing that table after the
+  service split is complete. Topic relationships such as `MajorId` and
+  `AdvisorId` are opaque IDs and must not cause cross-service ORM access.
 - `auth-service` already issues access tokens containing `user_id`, `email`,
   and `role`. The academic service will validate token signature and expiry
   locally; it will not query the auth-service database or call `/me/` per
