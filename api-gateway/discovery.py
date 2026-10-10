@@ -1,0 +1,233 @@
+"""Consul discovery and Nginx supervision. No domain logic or shared ORM."""
+import ipaddress
+import json
+import logging
+import math
+import os
+from pathlib import Path
+import re
+import signal
+import socket
+import subprocess
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+
+ROUTES = {"auth": "auth-service", "academic": "academic-service",
+          "registrations": "regist-service", "topics": "topic-service"}
+LOG = logging.getLogger("gateway.discovery")
+DEFAULT_CORS_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
+
+
+def parse_allowed_origins(value):
+    """Accept only literal browser origins safe to embed as Nginx map keys."""
+    if not value.strip():
+        return ()
+    origins = value.split(",")
+    if len(origins) > 64:
+        raise ValueError("CORS_ALLOWED_ORIGINS supports at most 64 origins")
+    result = set()
+    for item in origins:
+        origin = item.strip()
+        if not re.fullmatch(r"https?://(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::[0-9]{1,5})?", origin):
+            raise ValueError("CORS_ALLOWED_ORIGINS must contain exact HTTP(S) origins")
+        parsed = urlsplit(origin)
+        # Reuse strict host/port validation; no paths, userinfo, variables or wildcards.
+        endpoint(parsed.hostname, parsed.port if parsed.port is not None else 80)
+        result.add(origin)
+    return tuple(sorted(result))
+
+
+def cors_maps(origins):
+    lines = ["map_hash_bucket_size 512;", "map $http_origin $cors_origin {", 'default "";']
+    lines.extend(f'"{origin}" "{origin}";' for origin in origins)
+    lines.extend(["}", "map $http_origin $cors_requested {", '"" 0;', "default 1;", "}",
+                  'map "$request_method:$cors_requested:$cors_origin" $cors_preflight {',
+                  "default 0;", '"OPTIONS:1:" 2;', "~^OPTIONS:1:.+ 1;", "}"])
+    for name, value in [
+        ("methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"),
+        ("headers", "Authorization, Content-Type, Accept, X-Request-ID"),
+        ("max_age", "600"),
+    ]:
+        lines.extend([f"map $cors_preflight $cors_{name} {{", 'default "";', f'1 "{value}";', "}"])
+    return lines
+
+
+def positive_env(name, default):
+    value = float(os.getenv(name, default))
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be finite and positive")
+    return value
+
+
+def endpoint(address, port):
+    if not isinstance(address, str) or not address or len(address) > 253:
+        raise ValueError("Invalid instance address")
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError("Invalid instance port")
+    try:
+        ip = ipaddress.ip_address(address)
+        address = f"[{ip}]" if ip.version == 6 else str(ip)
+    except ValueError:
+        if not all(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+                   for label in address.split(".")):
+            raise ValueError("Invalid instance hostname") from None
+    return f"{address}:{port}"
+
+
+def parse_instances(payload, name):
+    if not isinstance(payload, list) or len(payload) > 1000:
+        raise ValueError("Invalid registry response")
+    result = set()
+    for item in payload:
+        service = item["Service"]
+        if service["Service"] != name:
+            raise ValueError("Unexpected service name")
+        checks = item["Checks"]
+        if not isinstance(checks, list):
+            raise ValueError("Invalid health checks")
+        if any(check.get("Status") != "passing" for check in checks):
+            continue
+        address = service.get("Address") or item["Node"]["Address"]
+        result.add(endpoint(address, service["Port"]))
+    return sorted(result)
+
+
+class Discovery:
+    def __init__(self, url, timeout=2, stale_ttl=15, token=None, clock=time.monotonic):
+        if not url.startswith(("http://", "https://")):
+            raise ValueError("CONSUL_URL must use HTTP(S)")
+        self.url = url.rstrip("/")
+        self.timeout = timeout
+        self.stale_ttl = stale_ttl
+        self.token = token
+        self.clock = clock
+        self.cache = {}
+
+    def fetch(self, name):
+        headers = {"Accept": "application/json"}
+        if self.token:
+            headers["X-Consul-Token"] = self.token
+        request = Request(f"{self.url}/v1/health/service/{name}?passing=true", headers=headers)
+        with urlopen(request, timeout=self.timeout) as response:
+            body = response.read(262145)
+            if len(body) > 262144:
+                raise ValueError("Registry response too large")
+            return parse_instances(json.loads(body), name)
+
+    def refresh_one(self, name):
+        try:
+            instances = self.fetch(name)
+            self.cache[name] = (self.clock(), instances)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            # Never log the registry URL, token or response body.
+            LOG.warning("Registry lookup failed for %s", name)
+        cached_at, instances = self.cache.get(name, (float("-inf"), []))
+        return instances if self.clock() - cached_at < self.stale_ttl else []
+
+    def refresh(self):
+        names = list(ROUTES.values())
+        with ThreadPoolExecutor(max_workers=len(names)) as pool:
+            return dict(zip(names, pool.map(self.refresh_one, names)))
+
+
+def render(instances, cors_origins=None):
+    origins = parse_allowed_origins(",".join(DEFAULT_CORS_ORIGINS if cors_origins is None else cors_origins))
+    lines = ["worker_processes auto;", "pid /var/run/nginx.pid;", "events {}", "http {",
+             "log_format safe '$request_id $request_method $uri $status';",
+             "access_log /dev/stdout safe;", "error_log /dev/stderr warn;"]
+    lines.extend(cors_maps(origins))
+    for route, name in ROUTES.items():
+        servers = instances.get(name, [])
+        if servers:
+            lines.append(f"upstream backend_{route} {{")
+            lines.extend(f"server {server};" for server in servers)
+            lines.append("}")
+    lines.extend(["server {", "listen 80;", "server_name _;", "default_type application/json;",
+                  'add_header Access-Control-Allow-Origin $cors_origin always;',
+                  'add_header Vary "Origin" always;',
+                  'add_header Access-Control-Allow-Methods $cors_methods always;',
+                  'add_header Access-Control-Allow-Headers $cors_headers always;',
+                  'add_header Access-Control-Max-Age $cors_max_age always;',
+                  '''location = /health/ { return 200 '{"status":"ok","service":"api-gateway"}'; }''',
+                  'error_page 502 504 =503 @unavailable;',
+                  '''location @unavailable { return 503 '{"detail":"Service unavailable."}'; }'''])
+    for header in ["Allow-Origin", "Allow-Credentials", "Allow-Methods", "Allow-Headers", "Expose-Headers", "Max-Age"]:
+        lines.append(f"proxy_hide_header Access-Control-{header};")
+    for route, name in ROUTES.items():
+        lines.append(f"location /{route}/ {{")
+        # Return-only rewrite directives: no domain logic or upstream preflight call.
+        lines.extend(["if ($cors_preflight = 2) { return 403; }",
+                      "if ($cors_preflight = 1) { return 204; }"])
+        if instances.get(name):
+            lines.extend([f"proxy_pass http://backend_{route}/;", "proxy_http_version 1.1;",
+                          "proxy_set_header Host $host;", "proxy_set_header Authorization $http_authorization;",
+                          "proxy_set_header X-Request-ID $request_id;",
+                          "proxy_set_header X-Real-IP $remote_addr;",
+                          "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
+                          "proxy_set_header X-Forwarded-Proto $scheme;",
+                          "proxy_connect_timeout 2s;", "proxy_read_timeout 10s;",
+                          "proxy_send_timeout 10s;", "proxy_next_upstream off;", "proxy_intercept_errors on;"])
+        else:
+            lines.append('''return 503 '{"detail":"Service unavailable."}';''')
+        lines.append("}")
+    lines.extend(['''location / { return 404 '{"detail":"Not found."}'; }''', "}", "}"])
+    return "\n".join(lines) + "\n"
+
+
+def apply_config(content, target=Path("/etc/nginx/nginx.conf"), reload=True):
+    if target.exists() and target.read_text() == content:
+        return False
+    candidate = target.with_suffix(".candidate.conf")
+    previous = target.read_text() if target.exists() else None
+    try:
+        candidate.write_text(content)
+        subprocess.run(["nginx", "-t", "-c", str(candidate)], check=True,
+                       capture_output=True, timeout=5)
+        candidate.replace(target)
+        if reload:
+            subprocess.run(["nginx", "-s", "reload"], check=True, capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        if previous is not None:
+            target.write_text(previous)
+        raise
+    finally:
+        candidate.unlink(missing_ok=True)
+    return True
+
+
+def serve():
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    discovery = Discovery(os.getenv("CONSUL_URL", "http://host.docker.internal:8500"),
+                          positive_env("CONSUL_TIMEOUT_SECONDS", "2"),
+                          positive_env("CONSUL_STALE_TTL_SECONDS", "15"), os.getenv("CONSUL_TOKEN"))
+    interval = positive_env("CONSUL_REFRESH_SECONDS", "3")
+    cors_origins = parse_allowed_origins(os.getenv("CORS_ALLOWED_ORIGINS", ",".join(DEFAULT_CORS_ORIGINS)))
+    stopping = threading.Event()
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(signum, lambda *_: stopping.set())
+    # Fail-closed bootstrap is independent of registry availability.
+    apply_config(render({}, cors_origins), reload=False)
+    nginx = subprocess.Popen(["nginx", "-g", "daemon off;"])
+    try:
+        while not stopping.is_set() and nginx.poll() is None:
+            if apply_config(render(discovery.refresh(), cors_origins)):
+                LOG.info("Healthy service routes updated")
+            stopping.wait(interval)
+        if not stopping.is_set():
+            raise RuntimeError("Nginx exited unexpectedly")
+    finally:
+        # A failed reload terminates the container: stale routes cannot live forever.
+        if nginx.poll() is None:
+            nginx.send_signal(signal.SIGQUIT)
+            try:
+                nginx.wait(timeout=12)
+            except subprocess.TimeoutExpired:
+                nginx.kill()
+                nginx.wait()
+
+
+if __name__ == "__main__":
+    serve()

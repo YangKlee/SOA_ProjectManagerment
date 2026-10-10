@@ -10,10 +10,13 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env", override=False)
 
 
 # Quick-start development settings - unsuitable for production
@@ -25,12 +28,15 @@ SECRET_KEY = 'django-insecure-g1z0@y0ewi5$)_+##u+k-1tvfacql+$!07vwl21*&zco()*+ud
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [host.strip() for host in os.getenv(
+    "ALLOWED_HOSTS", "localhost,127.0.0.1,[::1],host.docker.internal"
+).split(",") if host.strip()]
 
 
 # Application definition
 
 INSTALLED_APPS = [
+    "config.apps.RegistryConfig",
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -124,4 +130,18 @@ MAILERS = {
     'default': {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
+}
+
+
+# Opt-in registration does not block application requests.
+CONSUL = {
+    "AUTO_REGISTER": os.getenv("CONSUL_AUTO_REGISTER", "false").lower() in {"1", "true", "yes", "on"},
+    "URL": os.getenv("CONSUL_URL", "http://localhost:8500"),
+    "SERVICE_NAME": os.getenv("CONSUL_SERVICE_NAME", "regist-service"),
+    "SERVICE_ID": os.getenv("CONSUL_SERVICE_ID", "regist-service-8003"),
+    "SERVICE_ADDRESS": os.getenv("CONSUL_SERVICE_ADDRESS", "host.docker.internal"),
+    "SERVICE_PORT": os.getenv("CONSUL_SERVICE_PORT", "8003"),
+    "HEALTH_CHECK_URL": os.getenv("CONSUL_HEALTH_CHECK_URL", "http://host.docker.internal:8003/health/"),
+    "TOKEN": os.getenv("CONSUL_TOKEN"),
+    "TIMEOUT_SECONDS": os.getenv("CONSUL_TIMEOUT_SECONDS", "3"),
 }

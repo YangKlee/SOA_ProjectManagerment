@@ -177,3 +177,270 @@ data loss. Every endpoint listed in the table requires a bearer access token.
 - Public `departments` terminology differs from the table name `Faculties`,
   which can be confusing for clients. The proposed compatibility mapping must
   be explicitly approved before implementation.
+
+# Current task: Department CRUD handlers in app views (2026-10-10)
+
+## Objective and scope
+Move Department CRUD HTTP handlers from inherited security.crud classes into
+DeparmentManager/views.py so the resource behavior is visible in its own app.
+Only Department views and their automated tests are implementation scope.
+
+## Constraints
+Preserve existing URLs, DTO fields, response statuses, JWT authentication and
+ReadOnlyOrRoleOneWrite policy. Keep shared security/crud.py for other apps.
+Do not modify models, database files/schema, migrations, dependencies,
+infrastructure, service ports or gateway routes. No external calls.
+
+## Acceptance criteria
+Department list/create and detail GET/PUT/PATCH/DELETE handlers are explicit in
+DeparmentManager/views.py without inheriting shared CRUD views. Detail POST
+returns 405 rather than inheriting the collection creation handler. Existing
+supported CRUD behavior and permissions remain covered by automated tests.
+Django checks and academic-service tests run; failures are reported accurately.
+
+## Assumptions and risks
+The request means moving HTTP handlers, not changing endpoint paths. Existing
+<int:pk> routes and string database IDs are a pre-existing mismatch and remain
+outside this refactor. Moving handlers can accidentally change DTO conversion
+or permissions; focused tests will guard both. Tests must use mocks or isolated
+test storage and never write the shared project database. Detail POST 405 is an
+intentional correction to method handling and must be included in approval.
+
+## Revised scope: Department application service (supersedes the current scope above)
+The user requests a services.py layer inside DeparmentManager. This is an
+application service module, not a new independently deployed SOA service.
+Department views handle HTTP input/output, request DTO validation and existing
+permissions; they delegate business operations and all ORM access to services.py.
+The service provides list, get, create, update and delete operations, including
+record lookup and persistence. Keep request/response DTOs independent of models;
+the service must not depend on HTTP requests, Response or HTTP status codes.
+No new domain rules are assumed or introduced in this structural refactor.
+
+Additional acceptance criteria: views contain no direct ORM operations and do
+not inherit security.crud CRUD handlers. Service functions are covered by tests;
+view tests verify delegation, responses, validation and authorization. Missing
+records map to 404 at the HTTP boundary. Preserve existing URLs and permissions.
+Additional implementation file: DeparmentManager/services.py. Other exclusions
+and the planned detail POST 405 correction remain in effect. Approval pending.
+
+# Current task: Application services for remaining academic apps (2026-10-10)
+
+## Objective and scope
+Apply the Department URL -> view -> application service -> model structure to
+MajorManager, SubMajorManager and StudentManager inside academic-service.
+Create services.py per app; move CRUD ORM operations and relationship business
+validation there. Keep request DTO shape/type validation and response conversion
+in the HTTP layer. This does not create new deployed SOA services.
+
+## Constraints
+Preserve DTO fields, routes, JWT authentication, role-1 write policy, service
+ports and data ownership. No access to auth Users. No model/schema/database,
+migration, dependency, CI or infrastructure changes. Keep Department and shared
+security/crud.py unchanged. Do not add new business rules.
+
+## Acceptance criteria
+Views have explicit CRUD HTTP methods and delegate operations to app services;
+no direct ORM or relationship business validation in views/serializers.
+Services validate optional parent references for Major/SubMajor and the required
+Major and matching optional SubMajor for Student. Partial updates validate the
+merged current/proposed state. Service errors map to existing field-based 400
+responses; missing records map to 404. Detail POST returns 405. Tests cover CRUD,
+validation, partial updates, missing records, authentication and authorization.
+Academic-service Django check and full tests pass or limitations are reported.
+
+## Assumptions and risks
+The request covers the three remaining resource apps, not config/security.
+Services are local application modules and may access academic-owned models.
+Student PATCH currently relies on serializer.instance for omitted fields; the
+new service must preserve existing values and relationship checks. Keep the
+pre-existing integer URL converters despite string model IDs; route correction
+is outside scope. Tests use mocks/isolated storage, never the shared project DB.
+Moving validation can alter error behavior; preserve field keys/messages and
+check safe 400/404 responses. No new external-service contracts are introduced.
+
+# Current task: Restore local Docker engine and start API Gateway (2026-10-10)
+
+## Objective and scope
+Resolve docker compose up -d failing because Docker Desktop Linux Engine's
+named pipe is unavailable, then start the existing API Gateway container.
+Read-only inspection found desktop-linux selected, Docker CLI installed,
+Docker Desktop executable present, no Docker Desktop/backend processes, and
+com.docker.service stopped. Existing Compose uses nginx:1.27-alpine, port 8000.
+
+## Constraints and acceptance criteria
+Do not edit Compose, nginx configuration, service ports, source, dependencies,
+database or migrations. Do not reset Docker, delete volumes/images/containers
+or change engine mode/context without a revised plan. After approval, launch
+Docker Desktop and use the existing Linux engine/context. Success: docker info
+can reach the server, docker compose up -d succeeds, the gateway is running and
+its nginx configuration passes nginx -t. Backend availability is verified only
+if the corresponding Django processes are running.
+
+## Assumptions and risks
+Docker Desktop is stopped rather than broken. Starting it can resume existing
+containers and consume local resources. Compose may download the configured
+image. A WSL/virtualization or privilege error would require additional diagnosis
+and possibly a revised approved plan. Existing port 8000 conflicts must be
+reported, not resolved by terminating unrelated processes. Approval pending.
+
+# Current task: Plaintext password comparison for login (2026-10-10)
+
+## Objective and scope
+At the user's explicit request, replace Django check_password in auth-service
+login with direct comparison against the existing Users.Password value.
+Use constant-time comparison of UTF-8 bytes; do not hash the supplied password.
+This changes password verification only, not JWT signing or validation.
+
+## Constraints
+No database writes, password conversion, schema change, migrations, package
+installation, infrastructure or other-service changes. Preserve existing login
+DTOs, routes, token claims, refresh and profile behavior. Never log or return
+passwords. Only repository planning files may change until approval.
+
+## Acceptance criteria
+An existing plaintext password authenticates when supplied exactly; wrong
+password and unknown user retain the same safe 401 response. Missing/invalid
+fields return 400. Successful login still issues usable signed access/refresh
+JWTs and excludes passwords from its response. Tests cover identifier/email/
+userid login, invalid credentials, DTO errors and token/profile behavior.
+Run auth-service manage.py check and full tests; document the verification
+policy in the root and auth-service READMEs.
+
+## Assumptions and risks
+The user wants plaintext comparison for the project, not a hash migration or a
+fallback mode. Plaintext storage exposes passwords to anyone who reads the DB;
+it is unsuitable for production. Existing hashed rows will no longer accept
+original plaintext passwords with this policy; no rows will be changed or
+converted. JWT hashing/signing configuration remains unchanged. Tests use fake
+users and mocked ORM, never the shared project DB. Approval pending.
+
+# Current task: Load local .env in auth and academic services (2026-10-10)
+
+## Objective and scope
+Automatically load services/auth-service/.env and
+services/academic-services/.env during settings initialization, before reading
+JWT_SIGNING_KEY and Consul options. The same JWT key in both files must be used
+without manual PowerShell environment assignment. Scope is these two services.
+
+## Constraints
+Use python-dotenv with an explicit BASE_DIR / '.env' path and override=False:
+existing process environment wins over file values. Missing .env is allowed
+for CI/deployment. Preserve all API routes, JWT validation, authorization and
+password policy. Do not edit/read out real secret values or commit .env files.
+No database, migration, infrastructure or unrelated-service changes.
+
+## Acceptance criteria
+Each service loads only its own .env, independent of working directory.
+Quoted values are parsed correctly, environment overrides remain intact, absent
+files do not prevent startup, and settings consume loaded JWT/Consul values.
+Add automated settings tests with temporary files/fake secrets; do not contact
+Consul or write the shared DB. Both service checks and full tests pass. Existing
+CI installs dependencies from per-service requirements without command changes.
+
+## Assumptions and risks
+Only auth-service and academic-service are requested by the current issue;
+topic and other services remain outside scope. Add python-dotenv to both
+requirements and install in their existing virtual environments after approval.
+Pin a compatible published version verified after approval. File changes need
+server restart. Stale shell JWT values override .env intentionally. Loading
+auth .env can enable existing CONSUL_AUTO_REGISTER=true on actual server startup;
+verification must disable this in test/check processes to avoid external calls.
+
+# Current task: LectureManager lecturer CRUD app (2026-10-10)
+
+## Objective and scope
+Create the user-named LectureManager Django app inside academic-services using
+URL -> explicit view -> application service -> database-first model, matching
+the existing manager pattern. Resource/model terminology is Lecturer/lecturers.
+
+## Inspected schema and ownership
+Read-only sqlite metadata confirms Lecturers(LecturerId TEXT primary key,
+FacultyId TEXT nullable). FacultyId references Faculties.FacultyId; LecturerId
+references auth-owned Users.UserId. Academic owns Lecturers and Faculties only.
+Map lecturer_id explicitly to LecturerId as a string primary key, department
+relation explicitly to FacultyId with nullable metadata; managed=False.
+Do not import/query Users, include identity fields or inspect private auth rows.
+
+## API scope and acceptance criteria
+Expose collection /api/lecturers/ with GET/POST and detail
+/api/lecturers/<str:pk>/ with GET/PUT/PATCH/DELETE; gateway URLs prepend /academic.
+Use request/response DTOs with lecturer_id and optional nullable department_id.
+JWT required for every endpoint; all authenticated roles may read, writes
+require role 1. Preserve existing services/routes and shared JWT configuration.
+Services own CRUD and parent validation, views own DTO/HTTP translation.
+Return 200/201/204 success, field-based 400 validation/integrity errors, 404
+missing records, 401 invalid/missing/expired tokens, 403 unauthorized writes,
+and 405 unsupported methods (including detail POST). Reject duplicate lecturer
+IDs; lecturer_id is immutable on update (same value allowed, changed value 400).
+No accidental creation from a changed primary key. Use safe messages for missing
+referenced user / constraints without exposing raw database errors.
+
+## Constraints, assumptions and risks
+No schema change, production DB writes, migrations, packages, containers, CI
+command changes or new deployed service. No changes to other managers. Existing
+Users FK stays enforced by SQLite; no reusable service-authenticated identity
+lookup contract is introduced. Caller supplies an existing user ID; the new app
+does not independently validate identity via REST, an explicitly documented
+limitation rather than cross-service ORM access. Do not infer lecturer identity
+or role from a client-supplied ID. Existing foreign key dependencies can block
+delete; handle safely with 400 rather than cascading or raw 500. SQLite concurrent
+writes can contend; this task adds no retries/schema changes. No backup/DB
+rollback is needed because the task never modifies the shared DB. Leave existing
+unrelated working-tree changes (frontend, auth, etc.) untouched. Approval pending.
+
+# Current task: Consul-discovered API Gateway (2026-10-10)
+
+## Objective and scope
+Connect api-gateway to Consul Service Registry so routes resolve healthy service
+instances at runtime instead of fixed backend host/port proxy_pass entries.
+Keep Nginx as the HTTP gateway. Add a small Python-standard-library discovery
+worker in the gateway container to query Consul, generate upstream config,
+validate it with nginx -t and reload only when routing changes.
+Complete registry plumbing for academic-service, regist-service and topic-service;
+auth-service already has health and registration. No domain APIs are introduced.
+
+## Public contracts and architecture
+Preserve gateway port 8000, Consul 8500 and backend ports/names auth-service:8001,
+academic-service:8002, regist-service:8003, topic-service:8004. Preserve /auth/,
+/academic/, /registrations/ stripping semantics and implement the /topics/ route
+already documented in README. Forward Authorization, query strings and standard
+proxy headers. Gateway health stays public. Service-owned JWT/role checks stay
+unchanged. No cross-service ORM imports, domain models, password-policy changes
+or database operations. Existing regist-service business APIs are not implemented
+by this task; discovery does not make that service feature-complete.
+
+## Acceptance criteria
+Query Consul GET /v1/health/service/{name}?passing=true using configurable registry
+URL and optional token. Use returned service/node address and service port only;
+no hidden fixed backend fallback. Support multiple healthy instances. Validate
+registry response addresses/ports before generating config. Registry requests
+have bounded timeouts; refresh periodically, log no tokens. No healthy service
+returns safe JSON 503. Registry outage retains last good data only for a bounded
+configurable TTL, then fails closed with 503; startup works with Consul unavailable.
+Nginx reloads only validated configuration, keeps existing requests running, uses
+bounded proxy timeouts and does not blindly retry writes. Unknown routes return
+safe 404. Discovery tracks healthy-instance address changes without image rebuild.
+
+Every routed service has GET /health/ and opt-in, non-blocking Consul registration
+with unique configurable instance ID, health checks and unhealthy deregistration.
+New registration workers use bounded retry/backoff to recover registry startup
+races without blocking requests; admin/test commands must not register. Existing
+auth behavior is preserved unless minimal test/config fixes are needed.
+Environment ALLOWED_HOSTS supports host.docker.internal for container health
+checks, without wildcard host acceptance. Document bind address 0.0.0.0 for
+Windows-hosted backend services. Tests cover worker routing/failures and service
+registry plumbing. Update CI to run gateway tests and affected Django suites.
+
+## Constraints, assumptions and risks
+No database/model/schema/migration changes, new registration business logic,
+real secret edits, frontend changes or unrelated work. Do not reset Docker,
+remove volumes or stop unrelated containers. Gateway Python is infrastructure
+routing only; keep it independent of Django/domain modules. Consul is existing
+external soa-consul at host.docker.internal:8500 from gateway Docker; host Django
+uses localhost:8500. Do not create a competing Consul instance. IPv4/hostname
+support is required; valid IPv6 may be supported safely or explicitly documented.
+Image build needs network and a Python runtime added to the Nginx Alpine image.
+Gateway recreation briefly interrupts incoming traffic. Background process
+supervision and config reload failures require tests and clear logs. New service
+registration code must be local to each service, never import auth code. Topic's
+existing JWT configuration must be preserved, not expanded into unrelated fixes.

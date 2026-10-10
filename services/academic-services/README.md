@@ -1,7 +1,7 @@
 # Academic Service
 
-Academic Service owns departments, majors, sub-majors, students, and topics.
-This implementation exposes CRUD APIs for the first four resources at port
+Academic Service owns departments, majors, sub-majors, students, and lecturers.
+This implementation exposes CRUD APIs for these five resources at port
 `8002`. Through the API Gateway, prepend `/academic` to every service path.
 
 ## Database boundary
@@ -18,6 +18,14 @@ on a server database or separate databases.
 Set `JWT_SIGNING_KEY` to the exact same secret used by `auth-service`. Do not
 commit its real value; use the supplied `.env.example` only as a configuration
 template.
+
+Install dependencies using `.\venv\Scripts\python.exe -m pip install -r requirements.txt`.
+Settings automatically load this service's `.env` beside `manage.py`, regardless
+of the working directory. Existing process environment variables take precedence;
+a missing file is allowed. Restart auth and academic servers after editing their
+files and log in again. Remove a stale shell key with
+`Remove-Item Env:JWT_SIGNING_KEY -ErrorAction SilentlyContinue` before restarting
+if you want the file value to take effect. Never commit `.env` or real keys.
 
 Send an access token issued by `auth-service` with every request:
 
@@ -47,6 +55,8 @@ require the JWT claim `role` to equal the integer `1`.
 | GET, PUT, PATCH, DELETE | `/api/sub-majors/{id}/` | `/academic/api/sub-majors/{id}/` | Read: authenticated; write: role 1 |
 | GET, POST | `/api/students/` | `/academic/api/students/` | Read: authenticated; write: role 1 |
 | GET, PUT, PATCH, DELETE | `/api/students/{id}/` | `/academic/api/students/{id}/` | Read: authenticated; write: role 1 |
+| GET, POST | `/api/lecturers/` | `/academic/api/lecturers/` | Read: authenticated; write: role 1 |
+| GET, PUT, PATCH, DELETE | `/api/lecturers/{id}/` | `/academic/api/lecturers/{id}/` | Read: authenticated; write: role 1 |
 
 ## DTOs
 
@@ -90,6 +100,47 @@ belong to the supplied `major_id`.
 
 ## Data integrity
 
+### Lecturers (`LectureManager`)
+
+`LectureManager` uses explicit HTTP views, an application service layer, and an
+unmanaged model mapping the existing `Lecturers` table. It does not create tables
+or require migrations. DTO fields map `lecturer_id` to `LecturerId` and
+`department_id` to `FacultyId`. IDs may contain letters, for example `GV001`.
+
+Create request (`POST /api/lecturers/`) and response DTO:
+
+```json
+{
+  "lecturer_id": "GV001",
+  "department_id": "F01"
+}
+```
+
+`lecturer_id` is required on create and PUT and cannot change on update.
+`department_id` is optional and nullable; when supplied, a non-null department
+must exist. PATCH preserves omitted fields; `{"department_id": null}` clears the
+department. PUT requires `lecturer_id` and preserves an omitted department, in
+line with this API's optional-field behavior. No names, email addresses, passwords,
+or other auth-owned data are returned. The caller supplies an existing user ID.
+This app does not query `Users` or independently verify that ID through an auth
+REST contract; the existing database foreign key enforces the reference.
+
+List/retrieve/update return `200`; creation returns `201`; deletion returns `204`
+with an empty body. Invalid DTOs, missing departments, duplicate IDs, attempted
+ID changes, and database integrity violations return safe field-based `400`
+errors. Missing lecturers return `404`. Detail POST returns `405` for authorized
+callers. All endpoints require JWT; missing/invalid/expired tokens return `401`,
+and authenticated non-role-1 writes return `403`.
+
+Example validation error:
+
+```json
+{"department_id": "Department does not exist."}
+```
+
+Deletion never cascades into other resources; if the database reports dependent
+records, the API returns `400`. Database constraints remain unchanged.
+
 The database hierarchy is `Faculty -> Major -> Specialization`; a Student references a
 Major and may reference a SubMajor. Deleting a referenced Department, Major,
 or SubMajor is rejected with `400` instead of cascade-deleting academic data.
@@ -101,3 +152,47 @@ cd services\academic-services
 ..\academic-services\venv\Scripts\python.exe manage.py check
 ..\academic-services\venv\Scripts\python.exe manage.py test
 ```
+
+
+## Gateway service registry integration
+
+The gateway discovers `academic-service` through Consul, rather than a fixed backend URL.
+`GET /health/` is public and returns `{"status":"ok","service":"academic-service"}`.
+This is a liveness check and does not probe database readiness. JWT authorization
+on existing domain endpoints is unchanged.
+
+Settings load this service's `.env` beside `manage.py`; process environment wins.
+Install the service's `requirements.txt` in its Python environment. Configure:
+
+```dotenv
+CONSUL_AUTO_REGISTER=true
+CONSUL_URL=http://localhost:8500
+CONSUL_SERVICE_NAME=academic-service
+CONSUL_SERVICE_ID=academic-service-8002
+CONSUL_SERVICE_ADDRESS=host.docker.internal
+CONSUL_SERVICE_PORT=8002
+CONSUL_HEALTH_CHECK_URL=http://host.docker.internal:8002/health/
+ALLOWED_HOSTS=localhost,127.0.0.1,[::1],host.docker.internal
+```
+
+Set `CONSUL_TOKEN` through the environment/file only if registry ACLs require it.
+The instance ID must be unique across running instances; change both port and ID
+when adding another instance. These address defaults target Django on Windows
+and Consul/gateway in Docker Desktop. Use reachable container/service addresses
+for a different deployment. Start from this service directory:
+
+```powershell
+python manage.py runserver 0.0.0.0:8002
+```
+
+Restart after settings/.env changes. Health checks run every 10 seconds with a
+2-second timeout and deregister critical instances after one minute. Explicit
+commands `python manage.py register_consul` and
+`python manage.py register_consul --deregister` update this instance. Admin/test
+commands do not register automatically. Keep real secrets out of source control.
+
+Registration runs in a daemon thread without blocking requests. Failed registry
+PUTs use 1/2/4/.../30-second backoff, with a 3-second default request timeout.
+Successful registrations are refreshed every 30 seconds, recovering from a
+registry restart. Set `CONSUL_AUTO_REGISTER=false` (the default) for standalone
+commands/development without Consul. No auth-service source imports are used.
