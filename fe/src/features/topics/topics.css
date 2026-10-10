@@ -1,3 +1,11 @@
 .academic textarea { display: block; width: 100%; margin-top: 6px; padding: 10px 12px; border: 1px solid #ceccde; border-radius: 7px; background: #fff; color: #292741; font: inherit; resize: vertical; }
 .academic textarea:disabled { opacity: .55; cursor: not-allowed; }
 .topic-description { grid-column: 1 / -1; }
+.topic-row-actions { flex-wrap: wrap; min-width: 210px; }
+.academic button.topic-danger { border-color: #d19a9e; color: #a12230; background: #fff5f5; }
+.academic button.topic-danger:hover:not(:disabled) { background: #ffe8e8; }
+.topic-detail { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr); gap: 12px 20px; }
+.topic-detail dt { font-weight: 600; }
+.topic-detail dd { margin: 0; overflow-wrap: anywhere; }
+.topic-detail-description { white-space: pre-wrap; }
+@media (max-width: 520px) { .topic-detail { grid-template-columns: minmax(0, 1fr); gap: 4px; } .topic-detail dd { margin-bottom: 12px; } }

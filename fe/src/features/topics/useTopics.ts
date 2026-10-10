@@ -2,18 +2,29 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { normalizeApiError } from '../../services/api-error'
 import { listRecords } from '../academic/academic-api'
 import type { Lecturer, Major } from '../academic/academic-api'
-import { createTopic, getTopic, listTopics } from './topic-api'
-import type { CreateTopic, Topic } from './topic-api'
+import { createTopic, deleteTopic, getTopic, getTopicDetail, listTopics, updateTopic } from './topic-api'
+import type { CreateTopic, Topic, TopicDetail, TopicUpdate } from './topic-api'
 
 export type TopicField = 'name' | 'description' | 'advisor_id' | 'major_id'
 export const numericMajor = (id: string) => /^[0-9]+$/.test(id)
+type DialogMode = 'create' | 'detail' | 'edit' | 'delete' | null
+const fields = ['name', 'description', 'advisor_id', 'major_id'] as const
+const ambiguousWrite = (cause: unknown) => {
+  const failure = normalizeApiError(cause)
+  return failure.kind === 'network' || failure.kind === 'timeout' || failure.kind === 'unknown' || (failure.status ?? 0) >= 500
+}
 
-export function useTopics(canCreate: boolean, logout: () => void) {
+export function useTopics(canManage: boolean, logout: () => void) {
   const [rows, setRows] = useState<Topic[]>([])
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState('')
   const [query, setQuery] = useState('')
   const [appliedQuery, setAppliedQuery] = useState('')
+  const [mode, setMode] = useState<DialogMode>(null)
+  const [selected, setSelected] = useState<Topic | null>(null)
+  const [detail, setDetail] = useState<TopicDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState('')
   const [draft, setDraft] = useState<CreateTopic | null>(null)
   const [majors, setMajors] = useState<Major[]>([])
   const [lecturers, setLecturers] = useState<Lecturer[]>([])
@@ -26,8 +37,11 @@ export function useTopics(canCreate: boolean, logout: () => void) {
   const [uncertain, setUncertain] = useState(false)
   const [notice, setNotice] = useState('')
   const locked = useRef(false)
+  const original = useRef<CreateTopic | null>(null)
+  const pendingPatch = useRef<TopicUpdate>({})
   const loadRequest = useRef<AbortController | null>(null)
   const optionsRequest = useRef<AbortController | null>(null)
+  const detailRequest = useRef<AbortController | null>(null)
   const mutation = useRef<AbortController | null>(null)
 
   const failureMessage = useCallback((cause: unknown) => {
@@ -57,7 +71,7 @@ export function useTopics(canCreate: boolean, logout: () => void) {
     void Promise.resolve().then(() => { if (!disposed) return reload() })
     return () => {
       disposed = true
-      loadRequest.current?.abort(); optionsRequest.current?.abort(); mutation.current?.abort()
+      loadRequest.current?.abort(); optionsRequest.current?.abort(); detailRequest.current?.abort(); mutation.current?.abort()
     }
   }, [reload])
 
@@ -77,85 +91,166 @@ export function useTopics(canCreate: boolean, logout: () => void) {
     } finally { if (!controller.signal.aborted) setOptionsLoading(false) }
   }
 
+  function resetForm() {
+    setErrors({}); setFormError(''); setUncertain(false); setNotice('')
+    setDetail(null); setDetailError(''); setDraft(null); original.current = null
+  }
   function open() {
-    if (!canCreate || locked.current || draft) return
+    if (!canManage || locked.current || mode) return
     try {
       const id = crypto.randomUUID()
+      resetForm(); setMode('create'); setSelected(null)
       setDraft({ topic_id: id, name: '', description: '', advisor_id: '', major_id: '' })
-      setErrors({}); setFormError(''); setUncertain(false); setNotice('')
       void loadOptions()
     } catch {
       setListError('Không thể sinh mã đề tài. Vui lòng sử dụng HTTPS hoặc localhost.')
     }
   }
-  function close() {
-    if (locked.current) return
-    optionsRequest.current?.abort()
+  async function loadDetail(row: Topic, editing: boolean) {
+    detailRequest.current?.abort()
+    const controller = new AbortController()
+    detailRequest.current = controller
+    setDetailLoading(true); setDetailError('')
+    try {
+      const result = await getTopicDetail(row.topic_id, controller.signal)
+      if (controller.signal.aborted) return
+      if (editing) {
+        if (typeof result.major_id !== 'string' || !result.major_id ||
+            !(result.advisor_id === null || typeof result.advisor_id === 'string')) throw new Error('Missing management references')
+        const value = { topic_id: result.topic_id, name: result.name, description: result.description ?? '',
+          major_id: result.major_id, advisor_id: result.advisor_id ?? '' }
+        original.current = value; setDraft(value)
+      }
+      setDetail(result)
+    } catch (cause) {
+      if (!controller.signal.aborted) setDetailError(failureMessage(cause))
+    } finally { if (!controller.signal.aborted) setDetailLoading(false) }
+  }
+  function show(row: Topic, next: 'detail' | 'edit' | 'delete') {
+    if (locked.current || mode || (next !== 'detail' && !canManage)) return
+    resetForm(); setSelected(row); setMode(next)
+    if (next !== 'delete') void loadDetail(row, next === 'edit')
+    if (next === 'edit') void loadOptions()
+  }
+  function retryDetail() {
+    if (selected && !locked.current) void loadDetail(selected, mode === 'edit')
+  }
+  function dismiss() {
+    optionsRequest.current?.abort(); detailRequest.current?.abort()
+    setMode(null); setSelected(null); setDetail(null); setDetailError(''); setDetailLoading(false)
     setDraft(null); setErrors({}); setFormError(''); setUncertain(false)
+  }
+  function close() {
+    if (!locked.current) dismiss()
   }
   function change(key: TopicField, value: string) {
     if (locked.current || uncertain) return
     setDraft(previous => previous && { ...previous, [key]: value })
     setErrors(previous => ({ ...previous, [key]: undefined }))
   }
-  async function saved() {
-    setDraft(null); setUncertain(false); setFormError(''); setErrors({})
-    setNotice('Đã tạo đề tài.')
+  async function saved(message: string) {
+    dismiss(); setNotice(message)
     await reload()
   }
   async function save(): Promise<TopicField | undefined> {
-    if (!canCreate || !draft || locked.current || !optionsReady || uncertain) return
+    if (!canManage || !draft || locked.current || !optionsReady || uncertain || (mode !== 'create' && mode !== 'edit')) return
+    const editing = mode === 'edit'
+    const values = { ...draft, name: draft.name.trim() }
+    const changed = (key: TopicField) => !editing || values[key] !== original.current?.[key]
     const invalid: Partial<Record<TopicField, string>> = {}
-    if (!draft.name.trim()) invalid.name = 'Vui lòng nhập tên đề tài.'
-    if (!lecturers.some(row => row.lecturer_id === draft.advisor_id)) invalid.advisor_id = 'Vui lòng chọn giáo viên hướng dẫn.'
-    if (!majors.some(row => row.major_id === draft.major_id) || !numericMajor(draft.major_id)) invalid.major_id = 'Vui lòng chọn ngành có mã số hợp lệ.'
+    if (!values.name) invalid.name = 'Vui lòng nhập tên đề tài.'
+    if (changed('advisor_id') && !lecturers.some(row => row.lecturer_id === draft.advisor_id)) invalid.advisor_id = 'Vui lòng chọn giáo viên hướng dẫn.'
+    if (changed('major_id') && (!majors.some(row => row.major_id === draft.major_id) || !numericMajor(draft.major_id))) invalid.major_id = 'Vui lòng chọn ngành có mã số hợp lệ.'
     setErrors(invalid)
     const first = Object.keys(invalid)[0] as TopicField | undefined
     if (first) return first
+    const patch: TopicUpdate = {}
+    for (const key of fields) if (changed(key)) patch[key] = key === 'description' ? values[key].trim() : values[key]
+    if (editing && !Object.keys(patch).length) { close(); setNotice('Không có thay đổi.'); return }
+    pendingPatch.current = patch
     locked.current = true; setBusy(true); setFormError('')
     const controller = new AbortController()
     mutation.current = controller
     try {
-      await createTopic({ ...draft, name: draft.name.trim() }, controller.signal)
-      if (!controller.signal.aborted) await saved()
+      if (editing) await updateTopic(draft.topic_id, patch, controller.signal)
+      else await createTopic(values, controller.signal)
+      if (!controller.signal.aborted) {
+        await saved(editing ? 'Đã cập nhật đề tài.' : 'Đã tạo đề tài.')
+      }
     } catch (cause) {
       if (controller.signal.aborted) return
       const failure = normalizeApiError(cause)
-      const ambiguous = failure.kind === 'network' || failure.kind === 'timeout' || failure.kind === 'unknown' || failure.status === 409 || (failure.status ?? 0) >= 500
+      const ambiguous = ambiguousWrite(cause) || (!editing && failure.status === 409)
       setUncertain(ambiguous)
-      setFormError(ambiguous ? `${failureMessage(cause)} Chưa xác định kết quả tạo. Hãy kiểm tra kết quả trước khi gửi lại.` : failureMessage(cause))
+      const message = failureMessage(cause)
+      setFormError(ambiguous ? `${message} Chưa xác định kết quả ${editing ? 'cập nhật' : 'tạo'}. Hãy kiểm tra kết quả trước khi gửi lại.` : message)
       if (failure.status === 400 && failure.details && typeof failure.details === 'object') {
-        const fields = failure.details as Record<string, unknown>
+        const details = failure.details as Record<string, unknown>
         const next: Partial<Record<TopicField, string>> = {}
-        for (const key of ['name', 'description', 'advisor_id', 'major_id'] as const) {
-          if (key in fields) next[key] = 'Giá trị không hợp lệ. Vui lòng kiểm tra lại.'
-        }
+        for (const key of fields) if (key in details) next[key] = 'Giá trị không hợp lệ. Vui lòng kiểm tra lại.'
         setErrors(next)
         return Object.keys(next)[0] as TopicField | undefined
       }
     } finally { locked.current = false; if (!controller.signal.aborted) setBusy(false) }
   }
-  async function checkResult() {
-    if (!canCreate || !draft || !uncertain || locked.current) return
+  async function remove() {
+    if (!canManage || mode !== 'delete' || !selected || locked.current || uncertain) return
     locked.current = true; setBusy(true); setFormError('')
     const controller = new AbortController()
     mutation.current = controller
     try {
-      await getTopic(draft.topic_id, controller.signal)
-      if (!controller.signal.aborted) await saved()
+      await deleteTopic(selected.topic_id, controller.signal)
+      if (!controller.signal.aborted) await saved('Đã xóa đề tài.')
+    } catch (cause) {
+      if (controller.signal.aborted) return
+      const failure = normalizeApiError(cause)
+      if (failure.status === 404) { await saved('Đề tài không còn tồn tại.'); return }
+      if (failure.status === 409) setFormError('Đề tài đang có dữ liệu liên kết nên không thể xóa.')
+      else {
+        const ambiguous = ambiguousWrite(cause)
+        setUncertain(ambiguous)
+        const message = failureMessage(cause)
+        setFormError(ambiguous ? `${message} Chưa xác định kết quả xóa. Hãy kiểm tra kết quả trước khi thử lại.` : message)
+      }
+    } finally { locked.current = false; if (!controller.signal.aborted) setBusy(false) }
+  }
+  async function checkResult() {
+    const id = draft?.topic_id ?? selected?.topic_id
+    if (!canManage || !id || !uncertain || locked.current) return
+    locked.current = true; setBusy(true); setFormError('')
+    const controller = new AbortController()
+    mutation.current = controller
+    try {
+      const result = mode === 'edit' ? await getTopicDetail(id, controller.signal) : await getTopic(id, controller.signal)
+      if (controller.signal.aborted) return
+      if (mode === 'delete') {
+        setUncertain(false); setFormError('Đề tài vẫn tồn tại. Bạn có thể xác nhận xóa lại nếu cần.')
+      } else if (mode === 'edit') {
+        const current = result as TopicDetail
+        const matches = Object.entries(pendingPatch.current).every(([key, value]) =>
+          (current[key as TopicField] ?? '') === value)
+        if (matches) await saved('Đã xác nhận dữ liệu cập nhật.')
+        else {
+          setUncertain(false)
+          setFormError('Dữ liệu hiện tại chưa khớp bản sửa. Hãy xem lại hoặc đóng và tải lại đề tài trước khi lưu lại.')
+        }
+      } else await saved('Đã tạo đề tài.')
     } catch (cause) {
       if (controller.signal.aborted) return
       if (normalizeApiError(cause).status === 404) {
-        setUncertain(false)
-        setFormError('Chưa tìm thấy đề tài với mã này. Bạn có thể kiểm tra dữ liệu và gửi lại với cùng mã.')
+        if (mode === 'delete') await saved('Đã xác nhận đề tài không còn tồn tại.')
+        else if (mode === 'create') {
+          setUncertain(false)
+          setFormError('Chưa tìm thấy đề tài với mã này. Bạn có thể kiểm tra dữ liệu và gửi lại với cùng mã.')
+        } else setFormError('Đề tài không còn tồn tại. Đóng popup và tải lại danh sách.')
       } else setFormError(failureMessage(cause))
     } finally { locked.current = false; if (!controller.signal.aborted) setBusy(false) }
   }
   const normalized = appliedQuery.toLocaleLowerCase('vi')
   const visibleRows = rows.filter(row => [row.topic_id, row.name].some(value => value.toLocaleLowerCase('vi').includes(normalized)))
   return { rows: visibleRows, total: rows.length, loading, listError, query, setQuery,
-    search: () => setAppliedQuery(query.trim()), reload, draft, majors, lecturers,
-    optionsReady, optionsLoading, optionsError, loadOptions, formError, errors, busy,
-    uncertain, notice, open, close, change, save, checkResult }
+    search: () => setAppliedQuery(query.trim()), reload, mode, selected, detail, detailLoading, detailError, retryDetail,
+    draft, majors, lecturers, optionsReady, optionsLoading, optionsError, loadOptions, formError, errors, busy,
+    uncertain, notice, open, show, close, change, save, remove, checkResult }
 }
 export type TopicState = ReturnType<typeof useTopics>

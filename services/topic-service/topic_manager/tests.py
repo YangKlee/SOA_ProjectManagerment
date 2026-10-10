@@ -63,9 +63,9 @@ class TopicPersistenceTests(TransactionTestCase):
                 cursor.execute(f'DELETE FROM "{table}"')
         super().tearDown()
 
-    def authenticate(self, role):
+    def authenticate(self, role, identity="admin"):
         token = AccessToken()
-        token["user_id"] = "admin"
+        token["user_id"] = identity
         token["role"] = role
         self.token = str(token)
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
@@ -149,14 +149,20 @@ class TopicPersistenceTests(TransactionTestCase):
 
     def test_authentication_and_roles(self):
         self.create()
-        for role in (2, 3, "1", True, None):
+        for role in (3, 0, 4, "1", "2", True, None):
             self.authenticate(role)
             self.assertEqual(self.client.get("/api/topics/").status_code, 200)
-            for method, path, payload in [("post", "/api/topics/", self.data),
-                                          ("put", "/api/topics/DT001/", self.data),
-                                          ("patch", "/api/topics/DT001/", {}),
-                                          ("delete", "/api/topics/DT001/", None)]:
-                self.assertEqual(self.request(method, path, payload).status_code, 403)
+            for prefix in ("/api/", "/api/v1/"):
+                collection = prefix + "topics/"
+                for method, path, payload in [("post", collection, self.data),
+                                              ("put", collection + "DT001/", self.data),
+                                              ("patch", collection + "DT001/", {}),
+                                              ("delete", collection + "DT001/", None)]:
+                    self.assertEqual(self.request(method, path, payload).status_code, 403)
+                detail = self.client.get(collection + "DT001/").data
+                self.assertNotIn("major_id", detail)
+                self.assertNotIn("advisor_id", detail)
+        self.assertEqual(Topic.objects.get().name, self.data["name"])
         expired = AccessToken()
         expired["user_id"] = "admin"
         expired.set_exp(lifetime=timedelta(seconds=-1))
@@ -167,6 +173,49 @@ class TopicPersistenceTests(TransactionTestCase):
                                  ("patch", "/api/topics/DT001/"), ("delete", "/api/topics/DT001/")]:
                 self.assertEqual(self.request(method, path, self.data).status_code, 401)
         self.assertEqual(self.client.get("/health/").status_code, 200)
+
+    def test_management_detail_ids_and_shared_lecturer_crud_both_aliases(self):
+        with connection.cursor() as cursor:
+            cursor.execute("INSERT INTO Users VALUES ('lecturer-user')")
+        for prefix in ("/api/", "/api/v1/"):
+            with self.subTest(prefix=prefix):
+                collection = prefix + "topics/"
+                detail_url = collection + "DT001/"
+                self.authenticate(1)
+                self.create(prefix)
+                for role in (1, 2):
+                    self.authenticate(role, "lecturer-user" if role == 2 else "admin")
+                    detail = self.client.get(detail_url)
+                    self.assertEqual(detail.status_code, 200)
+                    self.assertEqual(detail.data["major_id"], "1")
+                    self.assertEqual(detail.data["advisor_id"], "GV001")
+                    self.assertEqual(detail.data["avisor_name"], "Nguyen An")
+                    listed = self.client.get(collection).data[0]
+                    self.assertNotIn("major_id", listed)
+                    self.assertNotIn("advisor_id", listed)
+                # A lecturer can edit/delete another user's topic under the approved shared policy.
+                changed = self.request("patch", detail_url, {"name": "Lecturer revision"})
+                self.assertEqual(changed.status_code, 200)
+                self.assertEqual(changed.data["updated_by"], "lecturer-user")
+                self.assertEqual(Topic.objects.get().advisor_id, "GV001")
+                self.assertEqual(self.request("put", detail_url, self.data).status_code, 200)
+                self.assertEqual(self.request("patch", detail_url, {"topic_id": "changed"}).status_code, 400)
+                self.assertEqual(self.client.delete(detail_url).status_code, 204)
+                created = self.create(prefix)
+                self.assertEqual(created.data["updated_by"], "lecturer-user")
+                self.assertNotIn("major_id", created.data)
+                self.assertEqual(self.client.delete(detail_url).status_code, 204)
+
+    def test_management_detail_retains_ids_during_name_outage_and_nullable_advisor(self):
+        self.create()
+        self.authenticate(2)
+        self.names.side_effect = clients.DependencyUnavailable()
+        self.assertEqual(self.request("patch", "/api/topics/DT001/", {"advisor_id": None}).status_code, 200)
+        result = self.client.get("/api/topics/DT001/").data
+        self.assertEqual(result["major_id"], "1")
+        self.assertIsNone(result["advisor_id"])
+        self.assertIsNone(result["major_name"])
+        self.assertIsNone(result["avisor_name"])
 
     def test_missing_and_disallowed_methods(self):
         for method in ("get", "put", "patch", "delete"):

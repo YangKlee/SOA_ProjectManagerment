@@ -32,3 +32,10 @@ class TopicResponseDTO(serializers.Serializer):
     created_at = serializers.DateTimeField(read_only=True, allow_null=True)
     updated_at = serializers.DateTimeField(read_only=True, allow_null=True)
     updated_by = serializers.CharField(read_only=True, allow_null=True)
+
+
+class TopicManagementDetailDTO(TopicResponseDTO):
+    """Reference IDs are returned only for authorized management detail reads."""
+
+    major_id = serializers.CharField(read_only=True)
+    advisor_id = serializers.CharField(read_only=True, allow_null=True)

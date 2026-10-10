@@ -8,7 +8,7 @@ Run on port `8004` after setting the same `JWT_SIGNING_KEY` as auth-service.
 
 - `GET /health/` is public.
 - `GET /api/topics/` requires a valid JWT.
-- Topic writes require JWT `role: 1`.
+- Topic writes require integer JWT `role: 1` or `role: 2`. Both roles manage all topics under the approved shared policy.
 
 
 ## Gateway service registry integration
@@ -73,7 +73,7 @@ Registrations. This service queries and mutates only Topics.
 
 The existing `/api/topics/` and `/api/topics/{id}/` routes remain aliases.
 Gateway examples: `/topics/api/v1/topics/` and `/topics/api/topics/`.
-GET requires a valid bearer access JWT; all writes require integer `role: 1`.
+GET requires a valid bearer access JWT; all writes require integer `role: 1` or `role: 2`. These two roles can create, edit and delete all topics, including topics created by other users. Role 3 and unknown/string/boolean roles cannot write. No own-topic restriction is applied under this approved policy.
 JWTs are validated locally and must include a nonempty string `user_id`.
 Health remains public even if a request contains an invalid Authorization header.
 
@@ -114,7 +114,7 @@ is described below.
 | --- | --- |
 | 400 | Invalid DTO, changed topic ID, or invalid academic reference; `{"major_id":"Referenced academic record does not exist."}` |
 | 401 | Missing, invalid, expired access token or invalid user identity |
-| 403 | Authenticated caller lacks integer role 1 for a write |
+| 403 | Authenticated caller lacks integer role 1 or 2 for a write |
 | 404 | Topic does not exist; `{"detail":"Topic does not exist."}` |
 | 405 | Unsupported method, including POST on detail routes |
 | 409 | Duplicate ID or database constraint conflict; referenced topics cannot be deleted |
@@ -214,7 +214,7 @@ or live academic deployment.
 The response now replaces `major_id` with `major_name` and `advisor_id` with
 `avisor_name` (this exact spelling is the API field). This is a user-approved
 breaking response change on both `/api/topics/` and `/api/v1/topics/`, including
-POST/PUT/PATCH responses. Request DTOs and database columns still use IDs.
+POST/PUT/PATCH responses. Request DTOs and database columns still use IDs. The management-detail exception below adds IDs alongside names only for role 1/2 GET detail; collection and mutation response DTOs stay unchanged.
 Update consumers that previously read the two ID response fields.
 
 Example response:
@@ -287,3 +287,21 @@ topic to discard both names even when academic eventually resolves the major.
 Compare read-only batch responses and timing to distinguish this from genuinely
 missing identities or empty names. Names remain nullable during outages;
 recovering transport/configuration must not manufacture names from IDs.
+
+## Management detail and lecturer permissions
+
+Both existing/v1 aliases allow authenticated integer roles 1 and 2 to POST/PUT/PATCH/DELETE any topic. JWTs are validated locally; the server determines the actor from user_id and never trusts a submitted audit field. Academic authorization is unchanged: lecturer reads can supply the existing reference validation/choice endpoints, but lecturers cannot write academic data.
+
+`GET /api/v1/topics/{id}/` (also `/api/topics/{id}/`) adds these fields for authorized roles 1/2, alongside all existing display/audit fields:
+
+```json
+{ "major_id": "1", "advisor_id": "GV001" }
+```
+
+advisor_id may be null. These IDs are topic-owned references, not cross-service ORM lookups. Display names may be null during enrichment outages; raw reference IDs still allow correct edit prefill. Role 3/other read-only callers receive the previous detail DTO. GET collection and POST/PUT/PATCH responses remain unchanged and omit the two reference IDs. Existing callers can continue reading major_name and avisor_name.
+
+The UI uses PATCH for changed name/description/reference fields, preserving untouched fields. Topic ID remains immutable. DELETE returns 204; missing topics return 404, referenced topics return 409 without cascades, storage/dependency failures return safe 503. Existing timeouts, REST reference validation and discovery behavior are unchanged; no schema, route, port or dependency changes are needed.
+
+Callers must not automatically retry writes. After an ambiguous PATCH, GET detail and compare the submitted values, rather than treating existence as proof of update. After ambiguous DELETE, GET 404 means currently absent; GET 200 requires an explicit new confirmation. These are state checks, not a concurrency lock: late requests and other writers can still change the record. Closing or leaving the UI does not roll back a request already accepted by the server.
+
+Tests cover lecturer creation and edits/deletion of an admin-created topic, role/identity denial, immutable ID, nullable reference details during display outages and unchanged list/mutation DTOs on both API aliases. Use the existing service environment to run manage.py check/test; tests use a disposable database and mock network calls.

@@ -16,6 +16,17 @@ export interface CreateTopic {
   advisor_id: string
 }
 
+export interface TopicDetail extends Topic {
+  file_url: string | null
+  status: number | null
+  created_at: string | null
+  updated_at: string | null
+  updated_by: string | null
+  major_id?: string
+  advisor_id?: string | null
+}
+export type TopicUpdate = Partial<Pick<CreateTopic, 'name' | 'description' | 'major_id' | 'advisor_id'>>
+
 const path = '/topics/api/v1/topics/'
 function topic(value: unknown): Topic {
   if (!value || typeof value !== 'object') throw new Error('Invalid topic response')
@@ -39,4 +50,21 @@ export async function getTopic(id: string, signal: AbortSignal): Promise<Topic> 
   const row = topic(data)
   if (row.topic_id !== id) throw new Error('Invalid topic identity')
   return row
+}
+
+export async function getTopicDetail(id: string, signal: AbortSignal): Promise<TopicDetail> {
+  const row = await getTopic(id, signal) as TopicDetail
+  if (!['file_url', 'created_at', 'updated_at', 'updated_by'].every(key => {
+    const value = row[key as keyof TopicDetail]
+    return value === null || typeof value === 'string'
+  }) || !(row.status === null || Number.isInteger(row.status))) throw new Error('Invalid topic detail')
+  return row
+}
+
+export async function updateTopic(id: string, input: TopicUpdate, signal: AbortSignal): Promise<void> {
+  await apiClient.patch(`${path}${encodeURIComponent(id)}/`, input, { signal })
+}
+
+export async function deleteTopic(id: string, signal: AbortSignal): Promise<void> {
+  await apiClient.delete(`${path}${encodeURIComponent(id)}/`, { signal })
 }

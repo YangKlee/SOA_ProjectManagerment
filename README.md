@@ -29,8 +29,7 @@ to `/admin`, role 2 to `/lecture`, and role 3 to `/student`. Role routes require
 an authenticated session and support logout. Nested admin CRUD routes are
 `/admin/departments`, `/admin/majors`, `/admin/students`, and `/admin/lecturers`.
 Sidebar/shortcut links update the URL, active menu, title and breadcrumb; browser
-Back/Forward follows page history. Each role has `/profile` as a development placeholder. `/admin/topics` lists
-topics and provides a create popup; `/lecture/topics` provides a read-only list.
+Back/Forward follows page history. Each role has `/profile` as a development placeholder. `/admin/topics` and `/lecture/topics` provide topic lists, details, creation, editing and confirmed deletion for roles 1 and 2.
 Registration menu routes remain development placeholders (see frontend README).
 Unknown URLs display 404. Login returns to a known requested route allowed for
 the authenticated role; external or unauthorized return destinations are rejected.
@@ -93,7 +92,7 @@ migrations require an approved task, backup, and rollback plan.
 
 The gateway forwards `Authorization: Bearer <token>`. Services validate JWTs
 locally with the shared `JWT_SIGNING_KEY` environment value. Authenticated roles
-may read academic/topic data; writes require JWT claim `role: 1`.
+may read academic/topic data. Academic writes require JWT claim `role: 1`; topic writes require integer role 1 or 2, with shared management rights over all topics.
 
 Auth-service login compares passwords directly with plaintext `Users.Password`
 values; no password hash verification or database conversion is performed.
@@ -204,21 +203,12 @@ This development setting does not change Gateway/Consul registration or disable
 authentication. Deployments should use discovery addresses reachable from each
 caller. See [topic reference client](services/topic-service/README.md#academic-reference-client).
 
-Frontend `/admin/topics` lists topic code, name, advisor name and major name,
-with explicit Search by code/name and a create popup. `/lecture/topics` lists
-and searches only. The popup includes name, description, lecturer and major
-selects; major is required by the existing API. GUIDs are generated once per
-draft using `crypto.randomUUID()` (HTTPS/localhost). Named lecturers and majors
-come through existing academic Gateway endpoints. Ambiguous create failures
-require a result check by GUID before manual resubmission; no automatic POST
-retry. See [frontend topic workflow](fe/README.md#danh-sách-và-tạo-đề-tài).
-Frontend edit/delete workflows remain unimplemented. Live account integration
-has not been verified; backend CRUD remains unchanged.
+Frontend `/admin/topics` and `/lecture/topics` show topic code, name, advisor name and major name, with explicit Search and detail/create/edit/delete actions. Role 1 and 2 share management rights over all topics under the approved policy. Creation uses one GUID per draft (HTTPS/localhost), plus name, description, lecturer and major selects. Editing fetches current reference IDs from management detail and sends only changed fields with PATCH; topic IDs are immutable. Deletion requires confirmation and preserves referenced topics on 409. Ambiguous writes require explicit result reconciliation before resubmission: edits compare submitted field values, deletion checks absence. No automatic write retries. See [frontend topic workflow](fe/README.md#danh-sách-và-tạo-đề-tài). Frontend and backend use isolated/mocked tests; live account/browser integration has not been verified.
 
 Topic CRUD supports GET/POST on `/topics/api/v1/topics/` and
 GET/PUT/PATCH/DELETE on `/topics/api/v1/topics/{id}/` through the gateway.
 Existing `/topics/api/topics/` routes remain available. Authenticated users may
-read; integer JWT role 1 may write. The existing topic-service:8004 ownership
+read; integer JWT roles 1 and 2 may create, edit and delete all topics. The existing topic-service:8004 ownership
 of Topics is retained as an approved exception to the AGENTS.md diagram.
 No database schema, port or gateway prefix changes are required.
 
@@ -234,7 +224,7 @@ for JSON examples, PUT/PATCH semantics, settings, errors and verification limits
 
 Topic responses now return `major_name` and `avisor_name` instead of `major_id`
 and `advisor_id` on both existing/v1 routes, including successful write responses.
-Write requests still use IDs. This is an approved breaking response change.
+Write requests still use IDs. This is an approved breaking response change. Management GET detail for roles 1/2 additionally returns raw major_id/advisor_id for edit prefill, preserving display names. List and successful write responses retain the names-only reference DTO; read-only roles receive no extra reference IDs.
 Topic calls academic's JWT-protected batch name lookup, which resolves lecturer
 names through auth's service-token-protected internal lookup; no cross-service
 ORM/table access is used. Configure the same nonempty `INTERNAL_SERVICE_TOKEN`

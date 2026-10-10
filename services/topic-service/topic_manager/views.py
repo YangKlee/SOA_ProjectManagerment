@@ -15,13 +15,13 @@ from .serializers import TopicRequestDTO
 LOG = logging.getLogger(__name__)
 
 
-class RoleOneWrite(BasePermission):
-    message = "Only users with role 1 may modify topics."
+class TopicManagementPermission(BasePermission):
+    message = "Only users with role 1 or 2 may modify topics."
 
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and (
             request.method in SAFE_METHODS or (
-                request.auth is not None and type(request.auth.get("role")) is int and request.auth.get("role") == 1)))
+                request.auth is not None and type(request.auth.get("role")) is int and request.auth.get("role") in (1, 2))))
 
 
 class HealthView(GenericAPIView):
@@ -33,7 +33,7 @@ class HealthView(GenericAPIView):
 
 
 class TopicAPIView(GenericAPIView):
-    permission_classes = [RoleOneWrite]
+    permission_classes = [TopicManagementPermission]
     serializer_class = TopicRequestDTO
 
     def finalize_response(self, request, response, *args, **kwargs):
@@ -72,7 +72,9 @@ class TopicListCreateView(TopicAPIView):
 
 class TopicDetailView(TopicAPIView):
     def get(self, request, pk):
-        return Response(topic_response(services.get_topic(pk), request.headers.get("Authorization", "")))
+        role = request.auth.get("role")
+        return Response(topic_response(services.get_topic(pk), request.headers.get("Authorization", ""),
+                                       management=type(role) is int and role in (1, 2)))
 
     def put(self, request, pk):
         return self.save(request, pk)

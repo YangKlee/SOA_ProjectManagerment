@@ -1,6 +1,6 @@
 # Frontend — Quản lý đồ án tốt nghiệp
 
-React + Vite + TypeScript, dùng npm, React Router và Axios client chung. Đã triển khai đăng nhập, bảo vệ route theo role và dashboard chung. Quản trị viên có thể quản lý khoa, ngành, sinh viên, giảng viên và xem/tạo đề tài qua API Gateway. Giảng viên có thể xem danh sách đề tài. Các luồng đã được kiểm thử bằng API mock; chưa xác minh với tài khoản backend thực tế.
+React + Vite + TypeScript, dùng npm, React Router và Axios client chung. Đã triển khai đăng nhập, bảo vệ route theo role và dashboard chung. Quản trị viên có thể quản lý khoa, ngành, sinh viên, giảng viên và quản lý đề tài qua API Gateway. Giảng viên cũng có thể thêm, xem chi tiết, sửa và xóa mọi đề tài theo quyền đã duyệt. Các luồng đã được kiểm thử bằng API mock; chưa xác minh với tài khoản backend thực tế.
 
 ## Chạy tại máy
 
@@ -76,9 +76,9 @@ Các trang dùng nested routes và `Outlet`; menu, shortcut và mục tài kho�
 | `/admin/students` | Quản lý sinh viên | 1 |
 | `/admin/lecturers` | Quản lý giảng viên | 1 |
 | `/admin/profile`, `/lecture/profile`, `/student/profile` | Thông tin cá nhân — Đang phát triển | Theo vai trò |
-| `/admin/topics` | Danh sách và tạo đề tài | 1 |
+| `/admin/topics` | Danh sách, chi tiết, thêm, sửa, xóa đề tài | 1 |
 | `/admin/registrations` | Đăng ký — Đang phát triển | 1 |
-| `/lecture/topics` | Danh sách đề tài (chỉ xem) | 2 |
+| `/lecture/topics` | Danh sách, chi tiết, thêm, sửa, xóa đề tài | 2 |
 | `/student/registrations` | Đăng ký — Đang phát triển | 3 |
 
 Khi truy cập trang bảo vệ lúc chưa đăng nhập, frontend ghi URL vào router state và chuyển sang `/login`. Đăng nhập thành công quay về URL đã yêu cầu nếu đây là route đã biết và đúng vai trò; giữ query/hash. Địa chỉ ngoài ứng dụng, đường dẫn không hợp lệ hoặc sai vai trò chuyển về tổng quan của tài khoản. State này không được lưu riêng qua reload trang login. URL không tồn tại hiển thị 404; đường dẫn dưới role vẫn qua guard trước khi hiển thị 404.
@@ -207,7 +207,7 @@ Menu nghiệp vụ nằm trong `src/components/layout/dashboard-menu.ts`:
 
 Các vai trò giữ Tổng quan và Đăng xuất. Sidebar không còn nhóm Trang cá nhân hoặc các mục học vụ/hướng dẫn cũ. Thông tin cá nhân truy cập từ bảng tài khoản trên header hoặc nút “Thông tin của tôi” ở trang tổng quan, độc lập với thứ tự menu nghiệp vụ. Trang tổng quan có lời chào, tối đa ba truy cập nhanh lấy từ menu của vai trò hiện tại và thông tin tài khoản.
 
-Việc chọn mục menu điều hướng tới route con tương ứng. Bốn mục học vụ của quản trị viên hiển thị màn hình CRUD. Quản lý đề tài hiển thị danh sách và popup tạo cho admin, danh sách chỉ xem cho giảng viên; thông tin cá nhân và đăng ký vẫn hiển thị “Đang phát triển”. Reload giữ nguyên URL và trang hiện tại khi token theo tab còn hợp lệ và `/auth/me/` xác thực thành công. Nội dung form và từ khóa tìm kiếm không được lưu qua reload. Chưa có API thông báo. Logo đang dùng chữ QNU tạm thời.
+Việc chọn mục menu điều hướng tới route con tương ứng. Bốn mục học vụ của quản trị viên hiển thị màn hình CRUD. Quản lý đề tài hỗ trợ danh sách, chi tiết, tạo, sửa và xóa cho admin/giảng viên; thông tin cá nhân và đăng ký vẫn hiển thị “Đang phát triển”. Reload giữ nguyên URL và trang hiện tại khi token theo tab còn hợp lệ và `/auth/me/` xác thực thành công. Nội dung form và từ khóa tìm kiếm không được lưu qua reload. Chưa có API thông báo. Logo đang dùng chữ QNU tạm thời.
 
 Trên màn hình rộng hơn 800px, sidebar mặc định mở và có thể ẩn. Ở màn hình nhỏ, sidebar mặc định đóng, mở dưới dạng drawer với nền che, khóa cuộn trang, giữ focus bàn phím bên trong và đóng bằng Escape/nút đóng/nhấn nền che/chọn mục. Các bảng trên header đóng bằng Escape hoặc nhấn ra ngoài. Có liên kết bỏ qua điều hướng để đến nội dung chính.
 
@@ -248,7 +248,7 @@ Trang login sử dụng banner `public/img/banner_QNU.jpg` và logo `public/img/
 
 ## Danh sách và tạo đề tài
 
-`/admin/topics` hiển thị danh sách và nút **Tạo đề tài**; `/lecture/topics` hiển thị danh sách chỉ xem theo quyền hiện tại của topic-service. Bảng có bốn cột: **Mã đề tài**, **Tên đề tài**, **Giáo viên hướng dẫn**, **Tên ngành**. Dữ liệu lấy từ `GET /topics/api/v1/topics/`; cột tên dùng đúng trường response `avisor_name` và `major_name`. Tên null hoặc rỗng hiển thị `—`. Chỉ lọc theo mã/tên khi nhấn **Search** hoặc submit form tìm kiếm; nhập chữ không tự lọc. Bộ lọc chạy trên danh sách đã tải.
+`/admin/topics` và `/lecture/topics` cho role 1/2 cùng quyền thêm, xem chi tiết, sửa và xóa mọi đề tài, không giới hạn theo người tạo/giảng viên hướng dẫn. Role 3 không có route quản lý đề tài; API giữ quyền chỉ đọc. Bảng có bốn cột dữ liệu **Mã đề tài**, **Tên đề tài**, **Giáo viên hướng dẫn**, **Tên ngành**, cùng cột **Thao tác**. Dữ liệu lấy từ `GET /topics/api/v1/topics/`; cột tên dùng đúng trường response `avisor_name` và `major_name`. Tên null hoặc rỗng hiển thị `—`. Chỉ lọc theo mã/tên khi nhấn **Search** hoặc submit form tìm kiếm; nhập chữ không tự lọc. Bộ lọc chạy trên danh sách đã tải.
 
 Popup tạo có tên (bắt buộc), mô tả (textarea, có thể bỏ trống), select giáo viên hướng dẫn và select ngành (bắt buộc). Ngành được bổ sung vì POST hiện yêu cầu `major_id`; không suy ra ngành từ khoa của giảng viên. Giảng viên lấy từ `/academic/api/v1/lecturers/`, dùng tên trong `user` và mã để phân biệt; thiếu tên hiển thị mã. Ngành lấy từ `/academic/api/majors/`; mã chữ bị vô hiệu hóa vì topic-service hiện chỉ xác thực được ngành có mã số. Không tự chọn ngành mặc định.
 
@@ -264,8 +264,16 @@ Frontend sinh GUID bằng `crypto.randomUUID()` một lần khi mở bản nháp
 }
 ```
 
-Các request dùng Axios/Gateway và Bearer JWT hiện tại, timeout 10 giây; không gọi trực tiếp service. Backend chỉ cho role 1 tạo. Form giữ dữ liệu khi lỗi, chặn gửi trùng trong lúc chờ và chưa cho gửi khi lựa chọn chưa tải. Sau tạo thành công, popup đóng và danh sách được tải lại. Lỗi tải lại danh sách không làm mất thông báo đã tạo thành công. 401 xóa phiên và quay về đăng nhập; 403 hiển thị lỗi quyền.
+Các request dùng Axios/Gateway và Bearer JWT hiện tại, timeout 10 giây; không gọi trực tiếp service. Backend cho JWT role 1/2 quản lý đề tài và chặn các role khác ghi dữ liệu. Form giữ dữ liệu khi lỗi, chặn gửi trùng trong lúc chờ và chưa cho gửi khi lựa chọn chưa tải. Sau tạo thành công, popup đóng và danh sách được tải lại. Lỗi tải lại danh sách không làm mất thông báo đã tạo thành công. 401 xóa phiên và quay về đăng nhập; 403 hiển thị lỗi quyền.
 
 Khi POST lỗi mạng/timeout/5xx hoặc 409, frontend không tự gửi lại. Popup khóa dữ liệu và có nút **Kiểm tra kết quả**, gọi `GET /topics/api/v1/topics/{guid}/`: 200 xác nhận đề tài đã tồn tại và tải lại danh sách; 404 cho phép gửi lại thủ công với cùng GUID; lỗi kiểm tra giữ trạng thái chưa xác định. Hủy popup bỏ bản nháp; nếu kết quả gửi chưa rõ, nên kiểm tra trước khi hủy để tránh tạo lại cùng nội dung bằng mã mới. F5 không lưu bản nháp. Đổi trang hủy request frontend đang chờ, nhưng không đảm bảo hủy thao tác backend đã nhận.
 
-Mã nằm trong `features/topics/`: `topic-api.ts`, `useTopics.ts`, `TopicPage.tsx` và các component riêng cho bảng, tìm kiếm, popup. Dùng lại Modal hiện có, bổ sung textarea vào vòng focus bàn phím. Tests dùng API mock kiểm tra payload/GUID, quyền, lỗi, tìm kiếm, cancellation, đường dẫn trực tiếp, F5 và lịch sử điều hướng. Chưa thực hiện tạo đề tài trên tài khoản/backend thật. Luồng sửa/xóa đề tài chưa được triển khai trong frontend.
+Mã nằm trong `features/topics/`: `topic-api.ts`, `useTopics.ts`, `TopicPage.tsx` và các component riêng cho bảng, tìm kiếm, popup. Dùng lại Modal hiện có, bổ sung textarea vào vòng focus bàn phím. Tests dùng API mock kiểm tra payload/GUID, quyền, lỗi, tìm kiếm, cancellation, đường dẫn trực tiếp, F5 và lịch sử điều hướng. Chưa thực hiện tạo đề tài trên tài khoản/backend thật. Các luồng chi tiết, sửa, xóa và quyền role 1/2 được kiểm thử bằng mock API; chưa xác minh trên trình duyệt với backend/tài khoản thật.
+
+### Chi tiết, sửa và xóa đề tài
+
+- **Chi tiết** gọi `GET /topics/api/v1/topics/{id}/`, hiển thị tên, mô tả, ngành, giảng viên, tệp đính kèm (chuỗi, không tự tải), trạng thái và thông tin cập nhật. Trạng thái hiển thị đúng giá trị API vì chưa có bảng quy đổi nghiệp vụ. Lỗi tải có nút thử lại; đóng popup hủy request đọc đang chờ.
+- **Sửa** lấy dữ liệu mới từ endpoint chi tiết. Chỉ role 1/2 nhận thêm `major_id` và `advisor_id` để điền select đúng theo mã, kể cả trùng/thiếu tên. Mã đề tài không đổi. `PATCH` chỉ gửi tên/mô tả/ngành/giảng viên đã thay đổi, giữ nguyên tệp, trạng thái, thời điểm tạo và trường không sửa. Tham chiếu cũ giữ nguyên được chấp nhận dù không còn trong lựa chọn; tham chiếu mới phải hợp lệ. Nếu không đổi gì thì không gửi PATCH.
+- **Xóa** yêu cầu **Xác nhận xóa** trước khi gửi `DELETE /topics/api/v1/topics/{id}/`; Hủy không gửi request. 204 đóng popup và tải lại danh sách; 404 thông báo đề tài không còn tồn tại. 409 giữ đề tài và báo dữ liệu còn liên kết. Không có xóa dây chuyền.
+- PATCH/DELETE lỗi mạng, timeout hoặc 5xx khóa thao tác ghi và yêu cầu **Kiểm tra kết quả**, không tự gửi lại. Với sửa, GET phải trả đúng các giá trị vừa gửi mới xác nhận dữ liệu; nếu khác, giữ bản nháp và báo cần xem lại. Với xóa, GET 404 xác nhận đề tài đã vắng; GET 200 yêu cầu xác nhận xóa lại thủ công. Lỗi kiểm tra giữ trạng thái chưa xác định. Đây là đối chiếu trạng thái hiện tại, không bảo đảm không có ghi đồng thời hoặc kết quả backend đến muộn.
+- Bộ lọc tìm kiếm giữ nguyên sau tải lại thành công. Chặn gửi trùng/đóng popup khi ghi đang chờ; đổi trang hủy request frontend nhưng không bảo đảm hủy xử lý backend. Popup hỗ trợ Escape, vòng focus và khôi phục focus khi phần tử mở còn khả dụng.

@@ -1,41 +1,36 @@
-﻿# Task: QNU login UI and page branding
+﻿# Task: Restore topic advisor and major display names in local development
 
-Status: Completed after user approval (`ok`).
+Status: Awaiting explicit user approval.
 
 ## Objective
-Match the supplied QNU login reference using public/img/banner_QNU.jpg and public/img/logo.png; use the QNU logo for the browser page icon and dashboard menu branding.
+Restore topic advisor/major display-name enrichment by correcting the local topic-to-academic connection, following the reported missing names after topic UI changes.
+
+## Read-only findings
+- TopicTable still renders avisor_name and major_name. No name columns were removed.
+- The inspected topic retains major_id 1186 and advisor_id lecture in its owned Topics record.
+- topic-service local .env enables ACADEMIC_DISCOVERY_ENABLED=true. Its configured ACADEMIC_BASE_URL=http://127.0.0.1:8002 is ignored in discovery mode.
+- Consul resolves academic-service to http://host.docker.internal:8002; the health request from this Windows environment timed out.
+- http://127.0.0.1:8002/health/ succeeds. Academic/auth local internal lookup credentials and JWT settings in their .env files are configured consistently (values not exposed).
+- Optional enrichment catches dependency failures and returns null names, which the UI displays as an em dash.
 
 ## Scope
-- Desktop login: large campus banner at left (approximately two thirds), light gray panel at right, centered university logo/name, white login card, red heading, navy submit button and footer.
-- Responsive tablet/mobile layout, accessible labels, validation, loading/error states and existing password visibility control.
-- Browser favicon and dashboard sidebar university logo; review dashboard-menu.ts and centralize shared branding there if appropriate, preserving role menus and routes.
-- Automated UI/regression tests and frontend README notes.
+- Set only ACADEMIC_DISCOVERY_ENABLED=false in services/topic-service/.env, preserving existing local ACADEMIC_BASE_URL=http://127.0.0.1:8002 and all other settings/secrets.
+- Restart only the verified local topic-service runserver on port 8004 so its process reloads .env.
+- Verify effective local settings, academic reachability and read-only name enrichment; no real topic writes.
+- Reuse documented Windows local-development configuration; no source, API, database or ownership changes.
 
 ## Constraints
-- Before confirmation, write only .agents/task.md and .agents/plan.md.
-- Preserve existing login API, credentials DTO, sessions, role guards, routes and unrelated working-tree changes.
-- No backend, database, dependencies, lockfiles, migrations or infrastructure changes. index.html favicon metadata is explicitly in scope.
-- Use existing supplied image assets without modifying them or fetching external assets.
+- Before approval, write only current fe/.agents/task.md and plan.md.
+- Never print credentials, signing keys, tokens or full environment files. Local .env remains untracked.
+- Preserve Gateway/Consul registration, academic/auth service processes, ports and routes.
+- Use static loopback only for this Windows local environment. Do not change discovery defaults in source or production configuration.
 
 ## Acceptance criteria
-- Login visually follows supplied reference at desktop and remains usable on small screens without horizontal overflow.
-- Both supplied assets are correctly referenced; favicon and sidebar branding use logo.png.
-- Validation, password toggle, duplicate-submit protection, server errors, login redirects and authorization regressions remain covered by tests.
-- Frontend tests, lint and build pass; visual review at desktop and mobile where tooling permits.
+- Restarted topic process uses discovery=false and the existing loopback academic base URL.
+- Name lookup reaches academic and returns real names for existing references where available; names remain nullable for genuinely absent identity data.
+- Shared database and source remain untouched; existing topic CRUD changes preserved.
 
-## Assumptions and risks
-- Page icon means browser favicon; dashboard-menu.ts reference means shared dashboard/menu branding, not replacement of every functional menu icon with the university logo.
-- No Google login or password-reset integration is currently present. Show the reference's secondary controls disabled with a clear unavailable explanation; implementing these flows requires a separate plan.
-- Reference shows validation after interaction; initial form must not show required errors before submission.
-- Existing working tree contains ongoing dashboard/academic work; preserve all unrelated edits.
-- Banner cropping and panel proportions must adapt to viewport sizes. Footer must not credit an unrelated vendor from the sample.
-
-## Completion and verification
-- Updated QNU login banner, university header, white card, navy submit, red heading and responsive styles. Existing authentication behavior and accessible validation remain intact.
-- Added logo favicon and replaced dashboard sidebar text branding with logo.png, shared via QNU_BRANDING in dashboard-menu.ts.
-- Google login and password reset are disabled with visible explanation; no API or architecture changes.
-- Added branding and secondary-action tests; existing role menu, authorization, redirect and authentication regressions pass.
-- Focused suite: 82 tests passed. Full suite: 179 tests passed across 10 files. npm run lint and npm run build passed.
-- Build favicon metadata and copied image bytes verified; scoped git diff --check passed (line-ending warnings only).
-- Browser visual verification unavailable: in-app browser was unavailable and connected browser inventory was empty. Desktop/mobile styling has not been screenshot-verified.
-- Updated frontend README only; existing unrelated changes were preserved. No Django checks apply to this frontend-only change.
+## Risks
+- Restart briefly interrupts topic requests. Verify listener/process identity and startup options before stopping it.
+- Current running process can differ from .env; restart is required for reliable configuration reload.
+- Missing records or independent auth lookup failures can still yield null names; diagnose those read-only if necessary before declaring recovery.
