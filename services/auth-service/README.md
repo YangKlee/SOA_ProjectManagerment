@@ -78,6 +78,13 @@ Successful response (`200 OK`):
 Invalid credentials return `401 Unauthorized`. Invalid or missing fields
 return `400 Bad Request`.
 
+Login compares the supplied password exactly with the plaintext value in
+`Users.Password`, including whitespace and Unicode. It does not verify password
+hashes or convert stored values. Accounts containing hashes cannot authenticate
+with their original passwords under this policy. Plaintext password storage is
+for this project only and is unsuitable for production: database readers can
+read every stored password. JWT signing and bearer authentication are unchanged.
+
 ### `POST /token/refresh/`
 
 Request DTO:
@@ -153,9 +160,17 @@ For a one-off operation:
 ..\..\venv\Scripts\python.exe manage.py register_consul --deregister
 ```
 
-Configuration keys and defaults are in [.env.example](.env.example). This
-project does not load `.env` files automatically; set values through the
-shell, Docker Compose environment, or the deployment platform.
+Configuration keys and defaults are in [.env.example](.env.example). Install
+dependencies with `.\venv\Scripts\python.exe -m pip install -r requirements.txt`.
+Settings automatically load `.env` beside this service's `manage.py`, regardless
+of the working directory, before reading JWT and Consul configuration. Existing
+process environment variables take precedence over file values. A missing file
+is allowed; do not commit real secrets. Use the same `JWT_SIGNING_KEY` in auth
+and academic services. Restart both servers after changing `.env`, then log in
+again to get a token signed with the current key. If an old shell value remains,
+remove it with `Remove-Item Env:JWT_SIGNING_KEY -ErrorAction SilentlyContinue`
+before restarting. `CONSUL_AUTO_REGISTER=true` in `.env` enables registration
+on startup and requires the configured Consul instance to be available.
 
 ## Verification
 

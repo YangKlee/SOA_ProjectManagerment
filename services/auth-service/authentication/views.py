@@ -1,8 +1,9 @@
+from hmac import compare_digest
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -44,7 +45,9 @@ class LoginView(APIView):
             except Users.DoesNotExist:
                 user = None
 
-        if user is None or not check_password(password, user.password):
+        if user is None or not compare_digest(
+            password.encode("utf-8"), user.password.encode("utf-8")
+        ):
             return Response(
                 {"detail": "Invalid email or password."},
                 status=status.HTTP_401_UNAUTHORIZED,
@@ -59,7 +62,7 @@ class LoginView(APIView):
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "token_type": "Bearer",
-            "user": UserResponseSerializer(user).data,
+            "user": user,
         })
         return Response(response_dto.data, status=status.HTTP_200_OK)
 
