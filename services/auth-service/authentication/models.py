@@ -2,7 +2,7 @@ from django.db import models
 
 
 class Users(models.Model):
-    """Read-only mapping of the existing shared Users table."""
+    """Auth-owned unmanaged mapping of the existing Users table."""
 
     userid = models.TextField(db_column="UserId", primary_key=True)
     lastname = models.TextField(db_column="LastName", blank=True, null=True)

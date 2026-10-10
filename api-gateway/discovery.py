@@ -174,7 +174,9 @@ def render(instances):
     lines.extend(["server {", "listen 80;", "server_name _;", "default_type application/json;",
                   '''location = /health/ { return 200 '{"status":"ok","service":"api-gateway"}'; }''',
                   'error_page 502 504 =503 @unavailable;',
-                  '''location @unavailable { return 503 '{"detail":"Service unavailable."}'; }'''])
+                  '''location @unavailable { return 503 '{"detail":"Service unavailable."}'; }''',
+                  '''location = /auth/internal { return 404 '{"detail":"Not found."}'; }''',
+                  '''location ^~ /auth/internal/ { return 404 '{"detail":"Not found."}'; }'''])
     for route, name in ROUTES.items():
         lines.append(f"location /{route}/ {{")
         if instances.get(name):

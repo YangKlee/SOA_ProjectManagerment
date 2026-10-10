@@ -231,9 +231,10 @@ batch discards that enrichment's names. A completed write keeps its successful
 status if optional display lookup fails; mandatory reference validation still
 returns 400/503 before writing as documented above.
 
-For lecturer names, configure the same nonempty `DISPLAY_NAMES_SERVICE_TOKEN`
+For lecturer names, configure the same nonempty `INTERNAL_SERVICE_TOKEN`
 in auth-service and academic-service through their own environments or local
-untracked .env files. Topic-service does not receive that token. Missing/mismatched
+untracked .env files. Topic-service has the common internal-token setting, but its
+current public academic calls forward only the caller JWT. Missing/mismatched
 service credentials cause advisor names to be null. See
 [academic lookup contract](../academic-services/README.md#topic-display-name-lookup)
 and [auth internal contract](../auth-service/README.md#internal-display-name-lookup).

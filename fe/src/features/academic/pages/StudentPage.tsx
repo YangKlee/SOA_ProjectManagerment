@@ -2,12 +2,14 @@ import { useAcademicManagement } from '../useAcademicManagement'
 import { valueOf } from '../academic-config'
 import { AcademicFormField } from '../components/AcademicFormField'
 import { AcademicManagementView } from '../components/AcademicManagementView'
+import { UserProfileFields } from '../components/UserProfileFields'
 
 export function StudentPage({ logout }: { logout: () => void }) {
   const state = useAcademicManagement('students', logout)
   const majors = state.majors.map((row) => ({ id: row.major_id, label: row.name }))
   const subMajors = state.subMajors.filter((row) => row.major_id === state.form?.major_id).map((row) => ({ id: row.sub_major_id, label: row.name }))
-  return <AcademicManagementView state={state} searchFields={['student_id']} columns={[
+  return <AcademicManagementView state={state} searchFields={['student_id', 'name']} columns={[
+    { key: 'name', label: 'Họ tên' }, { key: 'user.email', label: 'Email' },
     { key: 'student_id', label: 'Mã sinh viên / UserID' },
     { key: 'major_id', label: 'Ngành', render: (row) => {
       const id = valueOf(row, 'major_id')
@@ -26,5 +28,6 @@ export function StudentPage({ logout }: { logout: () => void }) {
     <AcademicFormField state={state} name="sub_major_id" options={subMajors} />
     <AcademicFormField state={state} name="accumulated_credits" />
     <AcademicFormField state={state} name="gpa" />
+    <UserProfileFields state={state} />
   </AcademicManagementView>
 }

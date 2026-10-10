@@ -227,7 +227,7 @@ it does not have periodic retry. If Consul was unavailable or restarted, run
 to academic-service. This is an internal read-only contract, authenticated with
 a dedicated X-Service-Token header. Ordinary user JWTs alone cannot access it.
 A missing/empty configured token denies every request. Set the same generated
-nonempty `DISPLAY_NAMES_SERVICE_TOKEN` environment value in auth and academic;
+nonempty `INTERNAL_SERVICE_TOKEN` environment value in auth and academic;
 never put it in frontend variables, repository files or client responses. Use
 private networking/TLS for this service credential outside local development.
 Existing login, refresh, health and me contracts remain unchanged.
@@ -262,3 +262,58 @@ independently. Caller timeout is bounded by academic's AUTH_NAMES_TIMEOUT_SECOND
 uses nullable name fallback on dependency failures. No external services are
 called by this endpoint. Run `python manage.py check` and `python manage.py test`
 for contract, permission, size-limit, quota and safe-error coverage.
+
+## Internal identity management v1
+
+Auth alone owns Users, mapped unmanaged to the existing table. This task creates
+no tables or migrations. Public login/refresh/me contracts and the existing
+password comparison policy are unchanged.
+
+Internal callers must send BOTH `X-Service-Token` matching a nonempty
+`INTERNAL_SERVICE_TOKEN` and `Authorization: Bearer <admin-access>`.
+The JWT role and current database user role must both be1. Both internal identity
+management and display-name lookup use the same shared credential. Provision it through environment/
+untracked .env identically in academic; never put it in VITE/browser variables.
+Gateway returns404 for `/auth/internal` and all `/auth/internal/*` paths, including
+encoded forms after Nginx normalization. Protect the auth-service port with
+network access policy in deployments; direct calls still require both credentials.
+
+| Internal route | Methods |
+| --- | --- |
+| `/internal/v1/identities/{kind}/` | POST |
+| `/internal/v1/identities/{kind}/{user_id}/` | GET, PATCH, DELETE |
+| `/internal/v1/identity-profiles/{kind}/` | POST read-only batch |
+
+kind is students or lecturers, assigning roles3/2 respectively. POST receives
+user_id, email, phone, password, optional last_name/first_name/gender/date_of_birth/
+status. PATCH accepts only supplied mutable fields; user_id is immutable.
+Unknown fields, role and timestamps are rejected. Password required create,
+omitted edit means unchanged, empty rejected; exact Unicode/whitespace comparison
+policy is preserved. Dates YYYY-MM-DD/null, gender/status nullable integers with
+no schema-defined enum, names max255 nullable, email max254, phone max50, password
+max1024; ID max255 single path segment, excluding control chars and `.`/`..`.
+Unique ID/email/phone is enforced by SQLite. CreatedAt/UpdatedAt generated as
+ISO-8601 timestamps. Cannot access/delete caller, admins or wrong-role identity.
+
+Safe responses use the public profile DTO fields only: user_id, last_name,
+first_name, gender, date_of_birth, email, phone, role, status, created_at, updated_at.
+Passwords never appear. POST201, GET/PATCH200, DELETE204, invalid DTO400,
+unauthenticated401, forbidden403, absent404, unique/reference conflict409,
+unsupported media415, throttle429, storage unavailable503. Errors contain safe
+detail/field messages, excluding database internals. No cascades across owned
+boundaries: external NO ACTION references prevent deleting Users.
+
+Batch request `{"user_ids":["SV001","missing"]}` ->
+`{"users":{"SV001":{...safe profile...},"missing":null}}`. Returns null for
+missing/wrong-role users, never discloses other capabilities. Max100 IDs, each
+max255, JSON body64KiB. Per-process cache quota120 requests/minute for this
+internal capability, including CRUD and batch calls. Correlation X-Request-ID is
+sanitized/generated, returned and logged with method/kind/status only; credentials
+and personal payloads excluded. No retry of writes; academic uses finite
+per-call timeouts (default2s) and explicit compensation, see
+[composite workflow/recovery](../academic-services/README.md#composite-studentlecturer-management-v1).
+
+Run `python manage.py check` and `python manage.py test`. Identity lifecycle tests
+use isolated SQLite, including synthetic external references, authorization,
+unique constraints, safe DTOs and compatibility with login. They never modify
+real user data. Restart auth/academic after provisioning the matching secret.

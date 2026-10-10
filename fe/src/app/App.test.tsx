@@ -226,7 +226,7 @@ describe('Login and role routes', () => {
   it('connects all four admin menu items to their academic screens', async () => {
     mock.onPost('/auth/login/').reply(200, responseForRole(1))
     for (const resource of ['departments', 'majors', 'students', 'lecturers', 'sub-majors']) {
-      mock.onGet(`/academic/api/${resource}/`).reply(200, [])
+      mock.onGet(`/academic/api/${resource === 'students' || resource === 'lecturers' ? 'v1/' : ''}${resource}/`).reply(200, [])
     }
     renderApp()
     fillForm(); submitForm()

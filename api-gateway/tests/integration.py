@@ -152,6 +152,12 @@ class GatewayIntegrationTests(unittest.TestCase):
     def test_unknown_route_is_safe_404(self):
         self.assertEqual(request("/not-a-service/"), (404, {"detail": "Not found."}))
 
+    def test_internal_identity_routes_never_reach_auth(self):
+        for path in ["/auth/internal", "/auth/internal/v1/identities/students/",
+                     "/auth/internal/v1/identity-profiles/lecturers/", "/auth/%69nternal/v1/identities/students/"]:
+            for method in ["GET", "POST", "DELETE"]:
+                self.assertEqual(request(path, method)[0], 404)
+
     def test_dual_stack_hostname_never_routes_to_unreachable_ipv6(self):
         families = {entry[0] for entry in socket.getaddrinfo("dualstack.gateway.test", None, type=socket.SOCK_STREAM)}
         self.assertEqual(families, {socket.AF_INET, socket.AF_INET6})

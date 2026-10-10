@@ -15,8 +15,8 @@ export function AcademicManagementView({ state, columns, searchFields, children 
       <button type="button" disabled={state.loading || state.busy || state.form !== null || state.deleting !== null} onClick={() => void state.reload()}>Tải lại</button>
       <button className="academic-primary" type="button" disabled={!state.ready || state.busy} onClick={() => state.open()}>Thêm {singular}</button>
     </div></div>
-    {state.resource !== 'lecturers' && <p className="academic-hint">Mã phải là số nguyên không âm, không có số 0 ở đầu để có thể sửa hoặc xóa. Bản ghi có mã khác chỉ được hiển thị.</p>}
-    {(state.resource === 'students' || state.resource === 'lecturers') && <p className="academic-hint">Mã phải là UserID của tài khoản đã tồn tại. Dữ liệu hiện có hỗ trợ tìm theo mã; chưa có họ tên.</p>}
+    {(state.resource === 'departments' || state.resource === 'majors') && <p className="academic-hint">Mã phải là số nguyên không âm, không có số 0 ở đầu để có thể sửa hoặc xóa. Bản ghi có mã khác chỉ được hiển thị.</p>}
+    {(state.resource === 'students' || state.resource === 'lecturers') && <p className="academic-hint">Tài khoản được tạo cùng hồ sơ. Mã là UserID đăng nhập và không thể đổi sau khi tạo.</p>}
     {state.notice && <p role="status" className="academic-success">{state.notice}</p>}
     {state.error && !state.form && <p role="alert" className="academic-error">{state.error}</p>}
     {state.form && <Modal title={title} busy={state.busy} onClose={state.closeForm}>

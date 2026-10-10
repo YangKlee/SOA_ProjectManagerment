@@ -9,8 +9,8 @@ afterEach(() => mock.restore())
 
 it('encodes lecturer identifiers as a single path segment', async () => {
   const id = 'GV #?'
-  const path = '/academic/api/lecturers/GV%20%23%3F/'
-  const dto = { lecturer_id: id, department_id: null }
+  const path = '/academic/api/v1/lecturers/GV%20%23%3F/'
+  const dto = { lecturer_id: id, department_id: null, user: { last_name: null, first_name: null, gender: null, date_of_birth: null, email: 'test@example.com', phone: '123', status: null } }
   mock.onPatch(path).reply(200, dto)
   mock.onDelete(path).reply(204)
   const signal = new AbortController().signal

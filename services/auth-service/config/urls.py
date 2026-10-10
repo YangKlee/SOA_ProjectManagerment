@@ -17,8 +17,12 @@ Including another URLconf
 from django.urls import path
 from authentication.views import CurrentUserView, HealthView, LoginView, TokenRefreshView
 from authentication.display_names import UserDisplayNamesView
+from authentication.identities import IdentityView, IdentityBatchView
 
 urlpatterns = [
+    path("internal/v1/identity-profiles/<str:kind>/", IdentityBatchView.as_view()),
+    path("internal/v1/identities/<str:kind>/", IdentityView.as_view()),
+    path("internal/v1/identities/<str:kind>/<str:user_id>/", IdentityView.as_view()),
     path("internal/v1/user-display-names/", UserDisplayNamesView.as_view(), name="user-display-names"),
     path("health/", HealthView.as_view(), name="check_health"),
     path("login/", LoginView.as_view(), name="login"),

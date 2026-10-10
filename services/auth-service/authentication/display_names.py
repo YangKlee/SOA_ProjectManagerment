@@ -41,7 +41,7 @@ class AcademicServicePermission(BasePermission):
     message = "Service credentials required."
 
     def has_permission(self, request, view):
-        expected = settings.DISPLAY_NAMES_SERVICE_TOKEN
+        expected = settings.INTERNAL_SERVICE_TOKEN
         supplied = request.headers.get("X-Service-Token", "")
         return bool(expected and supplied and compare_digest(expected.encode(), supplied.encode()))
 

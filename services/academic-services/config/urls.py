@@ -19,8 +19,13 @@ from django.urls import include, path
 
 from .health import health
 from LectureManager.display_names import TopicDisplayNamesView
+from profile_management import StudentProfileView, LecturerProfileView
 
 urlpatterns = [
+    path("api/v1/students/", StudentProfileView.as_view()),
+    path("api/v1/students/<str:pk>/", StudentProfileView.as_view()),
+    path("api/v1/lecturers/", LecturerProfileView.as_view()),
+    path("api/v1/lecturers/<str:pk>/", LecturerProfileView.as_view()),
     path("api/v1/topic-display-names/", TopicDisplayNamesView.as_view(), name="topic-display-names"),
     path("health/", health, name="health"),
     path('admin/', admin.site.urls),

@@ -17,6 +17,12 @@ def instance(address="127.0.0.1", port=8123, status="passing"):
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_internal_auth_routes_are_blocked_with_and_without_upstreams(self):
+        for config in (render({}), render({"auth-service": ["127.0.0.1:8001"]}),
+                       Path(__file__).resolve().parents[1].joinpath("nginx.conf").read_text()):
+            self.assertIn("location ^~ /auth/internal/ { return 404", config)
+            self.assertIn("location = /auth/internal { return 404", config)
+
     @patch("discovery.subprocess.run")
     def test_ipv4_hostname_resolution_is_bounded_validated_and_deduplicated(self, run):
         run.return_value.stdout = json.dumps({"dualstack.test": ["127.0.0.1", "127.0.0.1", "127.0.0.2"]})

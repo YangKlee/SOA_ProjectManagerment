@@ -142,3 +142,15 @@ not a production cluster.
 
 References: [Consul health service API](https://developer.hashicorp.com/consul/api-docs/health),
 [Nginx proxy retry policy](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_next_upstream).
+
+## Internal auth route policy
+
+Both bootstrap and discovered Nginx configurations return404 for
+`/auth/internal` and `/auth/internal/*` before public `/auth/` forwarding. This
+blocks internal identity-management and display-name contracts from browser
+routing, including encoded paths normalized by Nginx. Direct internal callers
+resolve auth-service via Consul and authenticate there; Gateway does not own
+identity business logic. Public login/refresh/me forwarding is unchanged.
+Rebuild/recreate Gateway when deploying this policy; building the image alone
+leaves existing containers running their old configuration. Unit and isolated
+real-Nginx integration tests exercise the deny with public routing regressions.

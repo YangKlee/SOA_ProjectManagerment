@@ -145,3 +145,6 @@ CONSUL = {
     "TOKEN": os.getenv("CONSUL_TOKEN"),
     "TIMEOUT_SECONDS": os.getenv("CONSUL_TIMEOUT_SECONDS", "3"),
 }
+
+# Shared credential for internal contracts; public JWT authentication is separate.
+INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "")

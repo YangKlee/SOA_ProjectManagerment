@@ -197,10 +197,60 @@ and `advisor_id` on both existing/v1 routes, including successful write response
 Write requests still use IDs. This is an approved breaking response change.
 Topic calls academic's JWT-protected batch name lookup, which resolves lecturer
 names through auth's service-token-protected internal lookup; no cross-service
-ORM/table access is used. Configure the same nonempty `DISPLAY_NAMES_SERVICE_TOKEN`
-in auth and academic only. Academic defaults to Consul auth discovery with
+ORM/table access is used. Configure the same nonempty `INTERNAL_SERVICE_TOKEN`
+across trusted services; auth and academic consume it for this lookup. Academic defaults to Consul auth discovery with
 `AUTH_NAMES_DISCOVERY_ENABLED=true` and a 2-second per-call
 `AUTH_NAMES_TIMEOUT_SECONDS`; explicit `AUTH_NAMES_BASE_URL` applies only with
 discovery disabled. Missing credentials/identity names or lookup outages yield
 null names while preserving topic read/write response success. See the three
 service READMEs for batch limits, quotas, credentials and fallback behavior.
+
+## Student/lecturer accounts and profiles
+
+Admin pages now use `/academic/api/v1/students/` and `/academic/api/v1/lecturers/`
+(GET/POST collection; GET/PATCH/DELETE string-ID detail). These composite APIs
+manage academic records and nested user fields together. Role is assigned by
+server (student 3, lecturer 2); passwords are write-only. Legacy `/api/` academic
+routes keep their academic-only behavior for compatibility.
+
+Users remains an auth-service-owned unmanaged mapping. Academic coordinates
+through authenticated internal REST; it does not map, join or query Users.
+Configure the same nonempty `INTERNAL_SERVICE_TOKEN` in auth and
+academic, in addition to the existing shared `JWT_SIGNING_KEY`. Academic resolves
+healthy auth instances through Consul by default. No schema/migrations changed.
+Restart the two Django services after configuring their environments, and rebuild/
+recreate Gateway from its updated config to enforce the internal-route deny.
+The internal identity routes are not intended for browser access.
+
+Deletion rejects referenced records and compensates confirmed failures. This is
+not a distributed ACID transaction: timeouts, compensation failures and process
+crashes can require reconciliation. A 503 `operation_incomplete` requires checking
+both records before retrying. See [academic contract and recovery guide](services/academic-services/README.md#composite-studentlecturer-management-v1)
+and [auth internal contract](services/auth-service/README.md#internal-identity-management-v1).
+
+## Shared internal-service credential
+
+All five Django services expose the same INTERNAL_SERVICE_TOKEN setting. Use one
+nonempty generated environment value across trusted internal callers/providers.
+Auth display-name and identity-management endpoints both read it via the existing
+X-Service-Token header. Identity management additionally requires the caller's
+admin JWT and current admin role. User JWTs/JWT_SIGNING_KEY and CONSUL_TOKEN have
+separate purposes and remain unchanged. Public JWT endpoints do not require an
+extra internal token; topic currently forwards JWTs to public academic endpoints.
+
+Old per-capability token environment variables are no longer read. Update caller
+and provider configuration together and restart affected services. Never expose
+the shared secret in VITE variables, source, logs or browser responses. Empty
+credentials deny internal access. A shared credential does not identify a unique
+calling service; endpoint-specific JWT/role policies still apply. Rotation must
+coordinate all internal consumers/providers.
+
+Auth/academic/topic/registration load untracked .env files; log-service reads its
+process environment and has no added dotenv dependency. Services with no current
+internal endpoint merely expose the common setting; no new routes or automatic
+credential forwarding were added.
+
+For Windows local identity development, academic may explicitly set
+AUTH_IDENTITY_DISCOVERY_ENABLED=false and AUTH_IDENTITY_BASE_URL=http://127.0.0.1:8001
+when Consul's host.docker.internal address is unreachable from Windows. Production
+defaults still use discovery; Gateway/Consul registration is not modified.

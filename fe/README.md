@@ -199,7 +199,7 @@ Test layout kiểm tra menu/identity của cả ba vai trò, fallback tên, side
 
 Đăng nhập role **1**, mở nhóm **HỌC VỤ** và chọn khoa, ngành, sinh viên hoặc giảng viên. Mỗi chức năng có page riêng, danh sách, tìm kiếm trên dữ liệu đã tải, tải lại, thêm, sửa và xác nhận xóa. API danh sách hiện trả mảng đầy đủ; chưa có phân trang phía server. Bảng hỗ trợ cuộn ngang trên màn hình nhỏ.
 
-Nhập từ khóa rồi bấm **Search** (hoặc Enter trong ô tìm kiếm) để áp dụng bộ lọc. Gõ hoặc xóa từ khóa chưa thay đổi kết quả; gửi từ khóa trống để hiện tất cả bản ghi. Khoa/ngành tìm theo mã hoặc tên, không phân biệt hoa thường. Sinh viên/giảng viên chỉ tìm theo mã vì DTO hiện không trả họ tên. Không tìm theo tên khoa/ngành liên quan, GPA hoặc tín chỉ.
+Nhập từ khóa rồi bấm **Search** (hoặc Enter trong ô tìm kiếm) để áp dụng bộ lọc. Gõ hoặc xóa từ khóa chưa thay đổi kết quả; gửi từ khóa trống để hiện tất cả bản ghi. Cả bốn trang tìm theo mã hoặc tên, không phân biệt hoa thường. Tên sinh viên/giảng viên ghép họ rồi tên từ user DTO. Không tìm theo tên khoa/ngành liên quan, GPA hoặc tín chỉ.
 
 **Thêm/Sửa** mở popup có nhãn trường, lỗi validation và lỗi API bên trong. Có nút Lưu, Hủy, Đóng; Escape đóng khi chưa gửi. Popup giữ focus bàn phím bên trong, khóa tương tác/cuộn nền và trả focus về nút mở khi đóng nếu nút còn dùng được. Trong khi lưu, không thể đóng hoặc gửi lặp. Lưu thành công và hoàn tất tải lại sẽ đóng popup.
 
@@ -209,15 +209,17 @@ Các page nằm tại `features/academic/pages/DepartmentPage.tsx`, `MajorPage.t
 | --- | --- | --- |
 | Khoa | `/academic/api/departments/` | `department_id`, `name` |
 | Ngành | `/academic/api/majors/` | `major_id`, `name`, `department_id` |
-| Sinh viên | `/academic/api/students/` | `student_id`, `major_id`, `sub_major_id`, `accumulated_credits`, `gpa` |
-| Giảng viên | `/academic/api/lecturers/` | `lecturer_id`, `department_id` |
+| Sinh viên | `/academic/api/v1/students/` | `student_id`, `major_id`, `sub_major_id`, `accumulated_credits`, `gpa`, `user` |
+| Giảng viên | `/academic/api/v1/lecturers/` | `lecturer_id`, `department_id`, `user` |
 
 Danh sách dùng GET, thêm dùng POST, sửa dùng PATCH và xóa dùng DELETE tại `{endpoint}{id}/`. ID được giữ nguyên khi sửa. Request dùng Axios client chung, Bearer token trong bộ nhớ và timeout 10 giây; không tự retry thao tác ghi. Khi chuyển màn hình, request đang chờ được hủy và phản hồi cũ không cập nhật màn hình mới.
 
 Khoa/ngành được tải làm lựa chọn quan hệ. Sinh viên chọn ngành và chuyên ngành từ `/academic/api/majors/` và `/academic/api/sub-majors/`; chuyên ngành lọc theo ngành, được xóa lựa chọn khi đổi ngành. Không có màn hình CRUD chuyên ngành trong phạm vi này. Quan hệ không bắt buộc có thể bỏ chọn và được gửi `null`; GPA là số hữu hạn, tín chỉ là số nguyên. Quy tắc nghiệp vụ và ràng buộc tham chiếu vẫn do backend xác nhận.
 
-**Giới hạn ID của backend:** route chi tiết khoa/ngành/sinh viên hiện dùng `<int:pk>`, dù DTO nhận chuỗi. Form tạo mới yêu cầu mã số nguyên không âm ở dạng chuẩn (ví dụ `123`, không dùng `SV001` hoặc `00123`) để bản ghi có thể sửa/xóa qua route hiện có. Dữ liệu cũ có mã không tương thích vẫn hiển thị, nhưng nút sửa/xóa bị khóa. Giảng viên dùng `<str:pk>` và hỗ trợ mã chữ như `GV001`. Frontend không sửa route backend.
+**Giới hạn ID:** khoa/ngành vẫn dùng route số nguyên không âm ở dạng chuẩn. API v1 sinh viên/giảng viên hỗ trợ mã chữ như `SV001`, `GV001`; mã không được chứa dấu phân cách đường dẫn hoặc chỉ là `.`/`..` và không đổi khi sửa.
 
-Sinh viên và giảng viên cần **UserID đã tồn tại trong auth-service**. Các DTO học vụ không trả họ tên/email và màn hình này không tạo tài khoản. Lỗi khóa ngoại hoặc xóa dữ liệu đang được tham chiếu có thể bị backend từ chối. Lỗi 400 theo trường được hiển thị dưới form; lỗi HTTP/network/timeout có thông báo an toàn. Form giữ dữ liệu khi gửi thất bại, khóa khi đang gửi và không tự gửi lại. Nếu ghi thành công nhưng tải lại thất bại, thông báo lưu thành công và lỗi tải lại cùng hiển thị; dùng “Tải lại” để lấy dữ liệu mới.
+Popup sinh viên/giảng viên dùng `UserProfileFields` chung: họ, tên, giới tính, ngày sinh, email, số điện thoại, trạng thái và mật khẩu. Thêm tạo cả tài khoản và hồ sơ; role tự gán 3/2. Mật khẩu bắt buộc khi thêm, để trống khi sửa sẽ không gửi trường password và giữ nguyên mật khẩu cũ; mật khẩu không bao giờ được trả từ API. Giới tính dùng select Nam = 1, Nữ = 0; trạng thái dùng select Hoạt động = 1, Khóa = 0. API nhận mã số, không nhận nhãn. Giữ lựa chọn trống (null) và hiển thị giá trị cũ ngoài danh sách để tránh tự thay đổi dữ liệu khi sửa. Thay đổi này chỉ cập nhật form, không thêm chính sách khóa đăng nhập ở backend. CreatedAt/UpdatedAt do server tạo.
+
+Xóa thành công nghĩa là xóa cả hồ sơ và tài khoản; dữ liệu có tham chiếu có thể bị từ chối (409). Lỗi 400, kể cả trường `user.*`, hiển thị dưới form. `operation_incomplete` báo cần tải lại và kiểm tra cả hai service trước khi thử lại; không tự gửi lại thao tác ghi. Form giữ dữ liệu khi thất bại. Nếu ghi thành công nhưng tải lại thất bại, thông báo lưu thành công và lỗi tải lại cùng hiển thị. Cần cấu hình `INTERNAL_SERVICE_TOKEN` khớp ở auth/academic, không đặt secret trong biến VITE hoặc trình duyệt. Xem hợp đồng và xử lý sự cố tại [academic README](../services/academic-services/README.md#composite-studentlecturer-management-v1).
 
 Tests học vụ dùng Axios Mock Adapter và Testing Library để kiểm tra CRUD của cả bốn page, DTO/method/path/Bearer, quan hệ nullable, tìm kiếm chỉ khi submit và loại trừ trường không liên quan, popup thêm/sửa, focus/trap/return, Escape/Hủy/Đóng, khóa popup khi đang lưu, giới hạn ID, lọc chuyên ngành, validation, lỗi HTTP/network/timeout, chống gửi lặp và hủy request. Integration test kiểm tra bốn menu mở đúng page và academic 401 xóa session/token. Các test này không xác minh kết nối Gateway/Consul/database thực tế.

@@ -29,10 +29,12 @@ export function useAcademicManagement(resource: Resource, logout: () => void) {
     const failure = normalizeApiError(cause)
     if (failure.kind === 'cancelled') return
     if (failure.status === 401) { logout(); return }
-    setError(failure.message)
+    const details = failure.details as { code?: string } | undefined
+    setError(details?.code === 'operation_incomplete' ? 'Chưa xác định được kết quả thao tác. Tải lại và kiểm tra hồ sơ, tài khoản trước khi thử lại.' : failure.status === 409 ? 'Mã, email, số điện thoại bị trùng hoặc bản ghi còn liên kết. Vui lòng kiểm tra dữ liệu.' : failure.message)
     if (failure.status === 400 && failure.details && typeof failure.details === 'object') {
       const fields: Record<string, string> = {}
-      for (const [key, value] of Object.entries(failure.details)) {
+      const flat = Object.entries(failure.details).flatMap(([key, value]) => key === 'user' && value && typeof value === 'object' && !Array.isArray(value) ? Object.entries(value).map(([child, error]) => [`user.${child}`, error] as const) : [[key, value] as const])
+      for (const [key, value] of flat) {
         if (!config.fields.some((field) => field.key === key)) continue
         if (typeof value === 'string') fields[key] = value
         else if (Array.isArray(value)) fields[key] = value.filter((item): item is string => typeof item === 'string').join(' ')
@@ -73,7 +75,7 @@ export function useAcademicManagement(resource: Resource, logout: () => void) {
   async function mutate(remove: boolean) {
     if (locked.current) return
     if (!remove && form) {
-      const invalid = validate(resource, form)
+      const invalid = validate(resource, form, editing !== undefined)
       setErrors(invalid)
       if (Object.keys(invalid).length) {
         return Object.keys(invalid)[0]

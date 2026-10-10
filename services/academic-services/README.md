@@ -226,7 +226,7 @@ Configure these environment values (loaded from the service .env, process wins):
 
 ```dotenv
 # Must match auth-service; use a generated secret, never commit a real value.
-DISPLAY_NAMES_SERVICE_TOKEN=
+INTERNAL_SERVICE_TOKEN=
 AUTH_NAMES_DISCOVERY_ENABLED=true
 AUTH_NAMES_TIMEOUT_SECONDS=2
 # Local development only when discovery is explicitly disabled:
@@ -257,3 +257,90 @@ process). Auth applies a shared 120/minute service quota. Topic handles these
 lookup failures with null-name fallback. No database schema or ownership changes.
 Run `python manage.py check` and `python manage.py test`; lookup tests mock HTTP
 and ORM boundaries and do not need running auth/Consul.
+
+## Composite student/lecturer management v1
+
+Admin JWT (role 1) is required for every method, including profile reads.
+Gateway adds `/academic` to these service-relative routes:
+
+| Route | Methods | Behavior |
+| --- | --- | --- |
+| `/api/v1/students/` | GET, POST | List/create student with safe user profile |
+| `/api/v1/students/{id}/` | GET, PATCH, DELETE | Read/edit/delete both profile and identity |
+| `/api/v1/lecturers/` | GET, POST | List/create lecturer with safe user profile |
+| `/api/v1/lecturers/{id}/` | GET, PATCH, DELETE | Read/edit/delete both profile and identity |
+
+POST student example (lecturer substitutes lecturer_id and department_id for the
+student academic fields):
+
+```json
+{"student_id":"SV001","major_id":"2","sub_major_id":null,"accumulated_credits":0,"gpa":0,"user":{"last_name":"Nguyen","first_name":"An","gender":null,"date_of_birth":"2004-01-31","email":"an@example.com","phone":"0900000000","status":1,"password":"initial-password"}}
+```
+
+Example response (POST 201, GET/PATCH 200):
+
+```json
+{"student_id":"SV001","major_id":"2","sub_major_id":null,"accumulated_credits":0,"gpa":0,"user":{"user_id":"SV001","last_name":"Nguyen","first_name":"An","gender":null,"date_of_birth":"2004-01-31","email":"an@example.com","phone":"0900000000","status":1,"role":3,"created_at":"2026-10-10T10:00:00+00:00","updated_at":"2026-10-10T10:00:00+00:00"}}
+```
+
+Lists return arrays; missing/mismatched legacy identities return user:null rather
+than exposing another role's profile. Such rows require reconciliation; PATCH/
+DELETE cannot adopt another identity. New IDs are immutable, max255, a single
+path segment excluding control characters and `.`/`..`. Email/phone are required
+and unique; names nullable/max255, phone max50, email max254, password max1024.
+Password is required on create, omitted to preserve on edit; explicit empty
+password is rejected. Dates are ISO-8601 YYYY-MM-DD/null. Gender/status are
+nullable integers because existing schema defines no enum. Role and timestamps
+are response-only. PATCH may include only user fields, only academic fields, or
+both; unknown/read-only fields are rejected. Existing local relationship rules
+still apply. No undocumented GPA scale or gender/status enum is imposed.
+
+Configure the same `INTERNAL_SERVICE_TOKEN` as auth-service for both identity
+management and display-name lookup; never expose it to frontend. Defaults:
+`AUTH_IDENTITY_DISCOVERY_ENABLED=true`, `AUTH_IDENTITY_TIMEOUT_SECONDS=2` (>0,
+finite, <=10). Only explicitly disabling discovery uses development
+`AUTH_IDENTITY_BASE_URL=http://localhost:8001`. Discovery resolves passing
+`auth-service` instances using CONSUL_*; no static fallback. Each call performs
+at most one discovery GET and one auth request, each with the configured timeout.
+No automatic retries. Bodies limited to64KiB, responses256KiB, batches100 IDs;
+large lists split into batches. Auth quota120 requests/minute per process cache,
+including preflight/compensation calls. Client circuit opens after3 dependency
+failures for10 seconds. Redirects, invalid statuses/DTOs and oversized responses
+fail closed. Bearer caller JWT, separate X-Service-Token and sanitized shared
+X-Request-ID are forwarded; logs omit payloads, tokens, passwords and user IDs.
+
+Statuses: 200 read/edit; 201 created; 204 both deleted; 400 DTO/relationship
+validation; 401 invalid JWT; 403 non-admin; 404 missing; 409 duplicate/reference/
+concurrent academic change; 415 non-JSON; 503 local/dependency unavailable or
+uncertain operation. Identity authorization/rate-limit failures map to safe503.
+Field400 errors may be nested under user. A partial/uncertain operation returns:
+
+```json
+{"code":"operation_incomplete","detail":"Operation outcome is uncertain. Reload and reconcile academic/identity records before retrying."}
+```
+
+Create validates academic inputs, creates identity, then commits child. A local
+failure attempts deleting only the newly created identity. Edit validates identity
+role, commits academic change, then patches identity; confirmed rejection restores
+academic fields only if the snapshot still matches. Delete commits child removal,
+then deletes identity; confirmed rejection restores the child. Lost DELETE
+responses are resolved with a read, never a repeated DELETE. NO ACTION references
+in registrations/topics/audit logs reject deletion; no business/audit cascade.
+SQLite transactions cover only owned local writes, never HTTP. Users remains
+owned solely by auth; all mappings/schema remain unchanged.
+
+Recovery: stop duplicate attempts for the affected ID; inspect the composite
+profile and the authorized internal auth GET through an operator-approved secure
+service channel. Check whether both records exist and their intended values.
+Never re-create/adopt/delete a pre-existing identity automatically. Repair any
+orphan/mismatch through a separately reviewed service-owned operation. Do not
+query another service's tables from application code. Process crash recovery is
+manual: there is no durable saga journal, broker, distributed lock or ACID promise.
+Concurrent edits use academic snapshot comparisons; identity edits are ordinary
+last-write-wins. A frontend timeout/unmount can also leave a completed request.
+
+Tests use temporary SQLite and mocked published REST, including references and
+compensation; no project DB writes. Run `python manage.py check` and
+`python manage.py test`. Legacy academic-only contracts are preserved. Deploy
+both services together with matching environment secrets and the updated Gateway
+internal-route block; a build alone does not update a running Gateway container.

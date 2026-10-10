@@ -10,7 +10,7 @@ from .display_names import ServiceLookupThrottle
 from .models import Users
 
 
-@override_settings(DISPLAY_NAMES_SERVICE_TOKEN="test-service-secret")
+@override_settings(INTERNAL_SERVICE_TOKEN="test-service-secret")
 class UserDisplayNamesTests(SimpleTestCase):
     url = "/internal/v1/user-display-names/"
 
@@ -43,7 +43,7 @@ class UserDisplayNamesTests(SimpleTestCase):
             self.client.credentials(**credentials)
             self.assertEqual(self.post({"user_ids": ["GV1"]}).status_code, 403)
         self.client.credentials(HTTP_X_SERVICE_TOKEN="test-service-secret")
-        with override_settings(DISPLAY_NAMES_SERVICE_TOKEN=""):
+        with override_settings(INTERNAL_SERVICE_TOKEN=""):
             self.assertEqual(self.post({"user_ids": ["GV1"]}).status_code, 403)
         users.assert_not_called()
 
