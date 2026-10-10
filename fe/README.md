@@ -30,6 +30,7 @@ Mở `http://localhost:5173`. Cổng dev được cố định; nếu đang bậ
 ```text
 src/
   app/                  # Routes, trang đích theo role và integration tests
+  config/               # Gateway dev proxy và test HTTP qua Vite thật
   features/auth/        # Login, DTO/API, auth context/provider, route guards
   services/
     api-client.ts       # Axios instance và quản lý access token trong bộ nhớ
@@ -103,14 +104,25 @@ Production hosting phải trả `index.html` cho đường dẫn SPA `/login`, `
 ## Cấu hình Gateway
 
 ```dotenv
-VITE_API_BASE_URL=http://localhost:8000
+VITE_API_BASE_URL=/
+VITE_API_PROXY_TARGET=http://localhost:8000
 ```
 
 Mọi API request phải dùng đường dẫn Gateway. Giữ nguyên các prefix `/auth/*`, `/academic/*`, `/registrations/*` theo contract của backend; không gọi trực tiếp cổng service hoặc Consul từ trình duyệt. Các route khác chỉ được thêm khi đã xác minh contract.
 
-Trong development, mặc định là `http://localhost:8000`. Khi build production, cấu hình `VITE_API_BASE_URL` bằng URL Gateway public trước khi build. Nếu không cấu hình, client dùng `/` trên cùng origin: hosting phải phục vụ frontend và chuyển tiếp các prefix API đến Gateway. Vite thay thế biến môi trường tại thời điểm build; sửa biến trên máy chủ sau build không thay đổi bundle.
+Axios mặc định dùng `/` để request cùng origin với frontend. Trong development, Vite proxy các prefix `/auth`, `/academic`, `/registrations`, `/topics` đến Gateway được cấu hình bằng `VITE_API_PROXY_TARGET` (mặc định `http://localhost:8000`). Giữ nguyên đường dẫn, method, JSON body và Bearer token; Gateway tiếp tục chịu trách nhiệm route đến service. Các đường dẫn frontend `/login`, `/admin`, `/lecture`, `/student` không đi qua proxy.
 
-Gateway phải chạy và cho phép origin frontend qua CORS khi khác origin; scaffold không thay đổi backend CORS. Dùng HTTPS cho frontend và Gateway trong production. Mọi biến `VITE_*` đều public trong bundle, không chứa signing key, mật khẩu, refresh token hoặc secrets.
+```text
+Browser http://localhost:5173/auth/login/
+  -> Vite proxy http://localhost:8000/auth/login/
+  -> API Gateway -> auth-service /login/
+```
+
+Browser chỉ gọi origin frontend nên development không cần CORS tại Gateway. Gateway và auth-service vẫn phải chạy/healthy để đăng nhập thực tế. Không cấu hình lại `VITE_API_BASE_URL=http://localhost:8000` khi muốn dùng proxy: URL tuyệt đối sẽ bỏ qua Vite và lại cần Gateway CORS.
+
+Sau khi cập nhật `.env` hoặc proxy config, dừng Vite bằng Ctrl+C rồi chạy lại `npm run dev`. Không cần restart Gateway cho thay đổi frontend proxy.
+
+Vite proxy phục vụ development, không được đóng gói vào `dist/`. Khi deploy production với `VITE_API_BASE_URL=/`, web server phải chuyển tiếp các API prefix trên cùng origin đến Gateway và trả SPA HTML cho route frontend. Nếu chọn API URL tuyệt đối, cấu hình CORS tại server cho origin production. Vite thay thế biến môi trường lúc build; sửa biến trên máy chủ sau build không thay đổi bundle. Dùng HTTPS trong production. Mọi biến `VITE_*` là cấu hình public, không chứa signing key, mật khẩu hoặc tokens.
 
 ## Dùng Axios client
 
@@ -152,7 +164,7 @@ npm run test
 npm run build
 ```
 
-Vitest, Testing Library và Axios Mock Adapter kiểm tra login, payload/response DTO, cả ba role, route guards, logout, duplicate submits, validation, lỗi HTTP/network/timeout và cancellation. Các test Axios hiện có tiếp tục kiểm tra gắn/xóa Bearer token và xử lý lỗi. Test không cần Django, Gateway hoặc database. Frontend CI nằm tại `../.github/workflows/frontend-tests.yml`; Python CI giữ nguyên.
+Vitest, Testing Library và Axios Mock Adapter kiểm tra login, payload/response DTO, cả ba role, route guards, logout, duplicate submits, validation, lỗi HTTP/network/timeout và cancellation. Các test Axios kiểm tra gắn/xóa Bearer token, xử lý lỗi và base URL mặc định/override. Test proxy khởi tạo Vite thật và Gateway giả lập trên các cổng loopback tạm thời để xác nhận đường dẫn, query, method/body/header, status lỗi và SPA fallback; server tự đóng sau test. Không cần Django, Gateway thật hoặc database. Frontend CI nằm tại `../.github/workflows/frontend-tests.yml`; Python CI giữ nguyên.
 
 Không chạy Django checks cho thay đổi chỉ thuộc frontend. Test mock không xác nhận CORS hoặc tích hợp đăng nhập với service đang chạy; cần kiểm thử bằng tài khoản hợp lệ qua Gateway trong môi trường triển khai.
 

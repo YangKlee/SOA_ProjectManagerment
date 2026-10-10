@@ -13,9 +13,14 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. `VITE_API_BASE_URL` configures the public Gateway
-URL (development default: `http://localhost:8000`). In production, set it before
-building, or serve the frontend and Gateway routes on the same origin. Never put
-secrets in `VITE_*` variables. Cross-origin requests require Gateway CORS support.
+URL (default: `/`). In development, Vite forwards `/auth`, `/academic`,
+`/registrations`, and `/topics` to `VITE_API_PROXY_TARGET` (default:
+`http://localhost:8000`), preserving paths and Authorization. Browser requests
+stay on the frontend origin, so Gateway CORS is not required for this setup.
+Use `VITE_API_BASE_URL=/` in `fe/.env` and restart Vite after configuration edits.
+In production, serve API routes through the same-origin web server; Vite's dev
+proxy is not included in the build. An explicit cross-origin API URL requires
+server CORS. Never put secrets in `VITE_*` variables.
 
 Run `npm run lint`, `npm run test`, and `npm run build` inside `fe/`.
 Frontend checks run independently in `.github/workflows/frontend-tests.yml`.

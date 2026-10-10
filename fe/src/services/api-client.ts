@@ -3,10 +3,8 @@ import { normalizeApiError } from './api-error'
 
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
 
-// Production defaults to a same-origin Gateway. localhost is development-only.
-export const API_BASE_URL = configuredBaseUrl || (
-  import.meta.env.DEV || import.meta.env.MODE === 'test' ? 'http://localhost:8000' : '/'
-)
+// Development uses Vite's Gateway proxy; production needs same-origin API routing.
+export const API_BASE_URL = configuredBaseUrl || '/'
 export const API_TIMEOUT_MS = 10_000
 
 let accessToken: string | null = null

@@ -13,46 +13,10 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.request import Request, urlopen
-from urllib.parse import urlsplit
 
 ROUTES = {"auth": "auth-service", "academic": "academic-service",
           "registrations": "regist-service", "topics": "topic-service"}
 LOG = logging.getLogger("gateway.discovery")
-DEFAULT_CORS_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
-
-
-def parse_allowed_origins(value):
-    """Accept only literal browser origins safe to embed as Nginx map keys."""
-    if not value.strip():
-        return ()
-    origins = value.split(",")
-    if len(origins) > 64:
-        raise ValueError("CORS_ALLOWED_ORIGINS supports at most 64 origins")
-    result = set()
-    for item in origins:
-        origin = item.strip()
-        if not re.fullmatch(r"https?://(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::[0-9]{1,5})?", origin):
-            raise ValueError("CORS_ALLOWED_ORIGINS must contain exact HTTP(S) origins")
-        parsed = urlsplit(origin)
-        # Reuse strict host/port validation; no paths, userinfo, variables or wildcards.
-        endpoint(parsed.hostname, parsed.port if parsed.port is not None else 80)
-        result.add(origin)
-    return tuple(sorted(result))
-
-
-def cors_maps(origins):
-    lines = ["map_hash_bucket_size 512;", "map $http_origin $cors_origin {", 'default "";']
-    lines.extend(f'"{origin}" "{origin}";' for origin in origins)
-    lines.extend(["}", "map $http_origin $cors_requested {", '"" 0;', "default 1;", "}",
-                  'map "$request_method:$cors_requested:$cors_origin" $cors_preflight {',
-                  "default 0;", '"OPTIONS:1:" 2;', "~^OPTIONS:1:.+ 1;", "}"])
-    for name, value in [
-        ("methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"),
-        ("headers", "Authorization, Content-Type, Accept, X-Request-ID"),
-        ("max_age", "600"),
-    ]:
-        lines.extend([f"map $cors_preflight $cors_{name} {{", 'default "";', f'1 "{value}";', "}"])
-    return lines
 
 
 def positive_env(name, default):
@@ -133,12 +97,10 @@ class Discovery:
             return dict(zip(names, pool.map(self.refresh_one, names)))
 
 
-def render(instances, cors_origins=None):
-    origins = parse_allowed_origins(",".join(DEFAULT_CORS_ORIGINS if cors_origins is None else cors_origins))
+def render(instances):
     lines = ["worker_processes auto;", "pid /var/run/nginx.pid;", "events {}", "http {",
              "log_format safe '$request_id $request_method $uri $status';",
              "access_log /dev/stdout safe;", "error_log /dev/stderr warn;"]
-    lines.extend(cors_maps(origins))
     for route, name in ROUTES.items():
         servers = instances.get(name, [])
         if servers:
@@ -146,21 +108,11 @@ def render(instances, cors_origins=None):
             lines.extend(f"server {server};" for server in servers)
             lines.append("}")
     lines.extend(["server {", "listen 80;", "server_name _;", "default_type application/json;",
-                  'add_header Access-Control-Allow-Origin $cors_origin always;',
-                  'add_header Vary "Origin" always;',
-                  'add_header Access-Control-Allow-Methods $cors_methods always;',
-                  'add_header Access-Control-Allow-Headers $cors_headers always;',
-                  'add_header Access-Control-Max-Age $cors_max_age always;',
                   '''location = /health/ { return 200 '{"status":"ok","service":"api-gateway"}'; }''',
                   'error_page 502 504 =503 @unavailable;',
                   '''location @unavailable { return 503 '{"detail":"Service unavailable."}'; }'''])
-    for header in ["Allow-Origin", "Allow-Credentials", "Allow-Methods", "Allow-Headers", "Expose-Headers", "Max-Age"]:
-        lines.append(f"proxy_hide_header Access-Control-{header};")
     for route, name in ROUTES.items():
         lines.append(f"location /{route}/ {{")
-        # Return-only rewrite directives: no domain logic or upstream preflight call.
-        lines.extend(["if ($cors_preflight = 2) { return 403; }",
-                      "if ($cors_preflight = 1) { return 204; }"])
         if instances.get(name):
             lines.extend([f"proxy_pass http://backend_{route}/;", "proxy_http_version 1.1;",
                           "proxy_set_header Host $host;", "proxy_set_header Authorization $http_authorization;",
@@ -204,16 +156,15 @@ def serve():
                           positive_env("CONSUL_TIMEOUT_SECONDS", "2"),
                           positive_env("CONSUL_STALE_TTL_SECONDS", "15"), os.getenv("CONSUL_TOKEN"))
     interval = positive_env("CONSUL_REFRESH_SECONDS", "3")
-    cors_origins = parse_allowed_origins(os.getenv("CORS_ALLOWED_ORIGINS", ",".join(DEFAULT_CORS_ORIGINS)))
     stopping = threading.Event()
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, lambda *_: stopping.set())
     # Fail-closed bootstrap is independent of registry availability.
-    apply_config(render({}, cors_origins), reload=False)
+    apply_config(render({}), reload=False)
     nginx = subprocess.Popen(["nginx", "-g", "daemon off;"])
     try:
         while not stopping.is_set() and nginx.poll() is None:
-            if apply_config(render(discovery.refresh(), cors_origins)):
+            if apply_config(render(discovery.refresh())):
                 LOG.info("Healthy service routes updated")
             stopping.wait(interval)
         if not stopping.is_set():

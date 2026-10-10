@@ -8,7 +8,7 @@ from unittest.mock import patch
 from urllib.error import URLError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from discovery import DEFAULT_CORS_ORIGINS, Discovery, apply_config, endpoint, parse_allowed_origins, parse_instances, render
+from discovery import Discovery, apply_config, endpoint, parse_instances, render
 
 
 def instance(address="127.0.0.1", port=8123, status="passing"):
@@ -17,43 +17,6 @@ def instance(address="127.0.0.1", port=8123, status="passing"):
 
 
 class DiscoveryTests(unittest.TestCase):
-    def test_cors_origin_parser_accepts_exact_origins_and_explicit_empty_allowlist(self):
-        self.assertEqual(parse_allowed_origins(""), ())
-        self.assertEqual(parse_allowed_origins("  "), ())
-        self.assertEqual(parse_allowed_origins("https://portal.example.com, http://[::1]:5173,https://portal.example.com"),
-                         ("http://[::1]:5173", "https://portal.example.com"))
-
-    def test_cors_origin_parser_rejects_wildcards_paths_and_nginx_injection(self):
-        invalid = ["*", "null", "https://*.example.com", "ftp://example.com", "http://example.com/",
-                   "http://example.com/path", "http://user@example.com", "http://example.com?x=1",
-                   "http://example.com#fragment", "http://example.com:0", "http://example.com:65536",
-                   "http://example.com;return 200", 'http://example.com"', "http://$host",
-                   "http://example.com\nreturn 200", "http://-bad.example", "http://example..com",
-                   "http://[invalid]", "http://localhost:5173,", ",http://localhost:5173",
-                   ",".join(f"https://site{i}.example" for i in range(65))]
-        for value in invalid:
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                parse_allowed_origins(value)
-
-    def test_cors_policy_survives_bootstrap_and_dynamic_route_changes(self):
-        for instances in [{}, {"auth-service": ["127.0.0.1:8123"]}, {"auth-service": ["127.0.0.1:9123"]}]:
-            config = render(instances, ("https://portal.example.com",))
-            self.assertIn('"https://portal.example.com" "https://portal.example.com";', config)
-            self.assertNotIn("localhost:5173", config)
-            self.assertIn('add_header Access-Control-Allow-Origin $cors_origin always;', config)
-            self.assertIn('add_header Vary "Origin" always;', config)
-            self.assertEqual(config.count('if ($cors_preflight = 1) { return 204; }'), 4)
-            self.assertIn("proxy_hide_header Access-Control-Allow-Origin;", config)
-            self.assertNotIn("add_header Access-Control-Allow-Credentials", config)
-
-    def test_cors_default_and_disabled_policy_and_bootstrap_file(self):
-        config = render({})
-        for origin in DEFAULT_CORS_ORIGINS:
-            self.assertIn(f'"{origin}" "{origin}";', config)
-            self.assertNotIn(origin, render({}, ()))
-        bootstrap = Path(__file__).resolve().parents[1] / "nginx.conf"
-        self.assertEqual(bootstrap.read_text(), config)
-
     def test_only_healthy_instances_deduplicated_and_node_fallback(self):
         self.assertEqual(parse_instances([instance(), instance(), instance(status="critical"),
                                          instance(address="")], "auth-service"),
