@@ -177,3 +177,83 @@ data loss. Every endpoint listed in the table requires a bearer access token.
 - Public `departments` terminology differs from the table name `Faculties`,
   which can be confusing for clients. The proposed compatibility mapping must
   be explicitly approved before implementation.
+
+# Current task: Department CRUD handlers in app views (2026-10-10)
+
+## Objective and scope
+Move Department CRUD HTTP handlers from inherited security.crud classes into
+DeparmentManager/views.py so the resource behavior is visible in its own app.
+Only Department views and their automated tests are implementation scope.
+
+## Constraints
+Preserve existing URLs, DTO fields, response statuses, JWT authentication and
+ReadOnlyOrRoleOneWrite policy. Keep shared security/crud.py for other apps.
+Do not modify models, database files/schema, migrations, dependencies,
+infrastructure, service ports or gateway routes. No external calls.
+
+## Acceptance criteria
+Department list/create and detail GET/PUT/PATCH/DELETE handlers are explicit in
+DeparmentManager/views.py without inheriting shared CRUD views. Detail POST
+returns 405 rather than inheriting the collection creation handler. Existing
+supported CRUD behavior and permissions remain covered by automated tests.
+Django checks and academic-service tests run; failures are reported accurately.
+
+## Assumptions and risks
+The request means moving HTTP handlers, not changing endpoint paths. Existing
+<int:pk> routes and string database IDs are a pre-existing mismatch and remain
+outside this refactor. Moving handlers can accidentally change DTO conversion
+or permissions; focused tests will guard both. Tests must use mocks or isolated
+test storage and never write the shared project database. Detail POST 405 is an
+intentional correction to method handling and must be included in approval.
+
+## Revised scope: Department application service (supersedes the current scope above)
+The user requests a services.py layer inside DeparmentManager. This is an
+application service module, not a new independently deployed SOA service.
+Department views handle HTTP input/output, request DTO validation and existing
+permissions; they delegate business operations and all ORM access to services.py.
+The service provides list, get, create, update and delete operations, including
+record lookup and persistence. Keep request/response DTOs independent of models;
+the service must not depend on HTTP requests, Response or HTTP status codes.
+No new domain rules are assumed or introduced in this structural refactor.
+
+Additional acceptance criteria: views contain no direct ORM operations and do
+not inherit security.crud CRUD handlers. Service functions are covered by tests;
+view tests verify delegation, responses, validation and authorization. Missing
+records map to 404 at the HTTP boundary. Preserve existing URLs and permissions.
+Additional implementation file: DeparmentManager/services.py. Other exclusions
+and the planned detail POST 405 correction remain in effect. Approval pending.
+
+# Current task: Application services for remaining academic apps (2026-10-10)
+
+## Objective and scope
+Apply the Department URL -> view -> application service -> model structure to
+MajorManager, SubMajorManager and StudentManager inside academic-service.
+Create services.py per app; move CRUD ORM operations and relationship business
+validation there. Keep request DTO shape/type validation and response conversion
+in the HTTP layer. This does not create new deployed SOA services.
+
+## Constraints
+Preserve DTO fields, routes, JWT authentication, role-1 write policy, service
+ports and data ownership. No access to auth Users. No model/schema/database,
+migration, dependency, CI or infrastructure changes. Keep Department and shared
+security/crud.py unchanged. Do not add new business rules.
+
+## Acceptance criteria
+Views have explicit CRUD HTTP methods and delegate operations to app services;
+no direct ORM or relationship business validation in views/serializers.
+Services validate optional parent references for Major/SubMajor and the required
+Major and matching optional SubMajor for Student. Partial updates validate the
+merged current/proposed state. Service errors map to existing field-based 400
+responses; missing records map to 404. Detail POST returns 405. Tests cover CRUD,
+validation, partial updates, missing records, authentication and authorization.
+Academic-service Django check and full tests pass or limitations are reported.
+
+## Assumptions and risks
+The request covers the three remaining resource apps, not config/security.
+Services are local application modules and may access academic-owned models.
+Student PATCH currently relies on serializer.instance for omitted fields; the
+new service must preserve existing values and relationship checks. Keep the
+pre-existing integer URL converters despite string model IDs; route correction
+is outside scope. Tests use mocks/isolated storage, never the shared project DB.
+Moving validation can alter error behavior; preserve field keys/messages and
+check safe 400/404 responses. No new external-service contracts are introduced.

@@ -114,3 +114,85 @@
 - Restore the pre-migration backup before any database-first work. No schema
   migrations are permitted in this task; rollback code mappings through Git
   commits without altering the shared database.
+
+# Current plan: Department CRUD handlers in app views (2026-10-10)
+
+1. After explicit approval, inspect local test/settings conventions read-only.
+2. Replace Department CRUD inheritance with explicit GenericAPIView-based
+   list/create and detail classes in DeparmentManager/views.py. Preserve DTO
+   handling and security.permissions.ReadOnlyOrRoleOneWrite; use the existing
+   from_department conversion directly instead of runtime alias assignment.
+3. Implement GET/POST only for the collection and GET/PUT/PATCH/DELETE only for
+   details. Preserve URL patterns and successful response codes.
+4. Expand DeparmentManager/tests.py for CRUD success, invalid payloads, missing
+   objects, permission failures and detail POST 405, without production DB writes.
+5. Run focused Department tests, then python manage.py check and python manage.py
+   test in academic-services using its available environment. Review the diff.
+
+## Expected changed files
+- .agents/task.md and .agents/plan.md (current task sections)
+- services/academic-services/DeparmentManager/views.py
+- services/academic-services/DeparmentManager/tests.py
+
+## Verification and rollback
+Assert response DTOs/statuses and read/write permission policy; confirm other
+apps still use unchanged shared CRUD. No inter-service clients are changed.
+Undo only this task's view/test changes to roll back; no database rollback is
+needed. No README changes are needed because paths, configuration and supported
+CRUD contracts remain unchanged; detail POST is explicitly rejected.
+
+## Revised implementation plan (supersedes current steps above)
+1. After approval, inspect academic-service settings and test conventions.
+2. Create DeparmentManager/services.py with Department list/get/create/update/
+   delete operations. Keep record lookup, business operations and persistence
+   here; use domain/model exceptions, with no DRF Response or HTTP dependency.
+3. Refactor DeparmentManager/views.py into explicit collection/detail HTTP
+   handlers. Preserve authentication and ReadOnlyOrRoleOneWrite. Validate input
+   with request DTOs, call services, serialize results with response DTOs and
+   translate missing records into 404. Remove runtime DTO alias assignment.
+   Do not add ORM calls or business rules to views. Keep routes unchanged and
+   return 405 for detail POST.
+4. Expand DeparmentManager/tests.py with isolated service tests and view tests
+   for delegation, CRUD responses, validation, missing records, authentication
+   and role failures, plus detail POST 405. Never write the shared project DB.
+5. Run focused tests, academic-service manage.py check and manage.py test using
+   the available environment. Review changed files and report limitations.
+
+Revised implementation files: DeparmentManager/services.py (new), views.py,
+tests.py; planning files only before approval. Shared CRUD, models, DTO contracts,
+URLs, infrastructure and database remain outside implementation scope.
+Rollback: undo only these service/view/test changes, preserving other user work;
+no schema or database rollback is necessary.
+
+# Current plan: Services for Major, SubMajor and Student (2026-10-10)
+
+1. After explicit approval, inspect the three apps' models and existing tests,
+   plus local conventions, without changing models/schema.
+2. Add services.py per app with list/get/create/update/delete operations and
+   relationship validation. Define app-local business validation exceptions
+   with field errors, independent of DRF and HTTP. Validate before persistence;
+   Student updates use merged existing/proposed state.
+3. Simplify request serializers to DTO field/type validation; remove ORM-based
+   relationship checks now owned by services. Preserve response DTO contracts.
+4. Refactor each views.py to explicit GenericAPIView collection/detail handlers,
+   preserving permissions, validating DTOs and calling services. Translate
+   missing records to 404 and service validation errors to 400; serialize results.
+   Remove runtime response DTO aliases and inherited CRUD. Detail POST is 405.
+5. Expand each app's tests.py with isolated service tests and endpoint tests:
+   CRUD delegation, parent relationship failures, Student partial update cases,
+   malformed payloads, missing records, token/role failures and detail POST 405.
+6. Run focused tests for the three apps, then academic-service manage.py check
+   and manage.py test using its existing venv. Review diff and changed-file scope.
+
+## Expected files to change
+- .agents/task.md, .agents/plan.md
+- services/academic-services/MajorManager/{services.py,views.py,serializers.py,tests.py}
+- services/academic-services/SubMajorManager/{services.py,views.py,serializers.py,tests.py}
+- services/academic-services/StudentManager/{services.py,views.py,serializers.py,tests.py}
+
+## Verification and rollback
+Test service behavior and HTTP responses with no shared project DB writes.
+Re-run Department tests as part of the full suite. No inter-service client is
+changed. No README change is needed because deployed architecture, URLs, DTOs
+and configuration are preserved. Roll back only these task-specific source/test
+edits; no database restore or migration is required. Approval pending.
