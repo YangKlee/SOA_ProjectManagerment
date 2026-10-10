@@ -115,7 +115,7 @@ describe('Vite proxy HTTP integration', () => {
 
   it('serves frontend routes as SPA HTML without sending them to the Gateway', async () => {
     const before = received.length
-    for (const path of ['/login', '/admin', '/lecture', '/student', '/authentication/login/']) {
+    for (const path of ['/login', '/admin', '/lecture', '/student', '/admin/departments', '/admin/majors', '/admin/students', '/admin/lecturers', '/lecture/topics', '/student/registrations', '/admin/profile', '/missing', '/authentication/login/']) {
       const response = await fetch(`${frontendOrigin}${path}`, { headers: { Accept: 'text/html' } })
       expect(response.status).toBe(200)
       expect(response.headers.get('content-type')).toContain('text/html')

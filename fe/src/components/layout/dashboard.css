@@ -1,6 +1,7 @@
 .dashboard { --dash-primary: #363199; --dash-sidebar: #29266d; --dash-line: #e8e8f1; min-height: 100svh; background: #f5f6fb; color: #292b42; font-size: 14px; line-height: 1.55; }
 .dashboard [hidden] { display: none !important; }
 .dashboard button { font: inherit; cursor: pointer; }
+.dashboard a { text-decoration: none; }
 .dashboard button:focus-visible, .dashboard a:focus-visible { outline: 3px solid #ffac56; outline-offset: 3px; }
 .dashboard svg { flex-shrink: 0; }
 .dash-skip { position: fixed; top: -100px; left: 16px; padding: 12px; background: white; color: #363199; z-index: 100; }
@@ -15,12 +16,10 @@
 .dash-popover { position: absolute; top: 48px; right: 0; width: min(320px, calc(100vw - 32px)); padding: 22px; background: white; color: #292b42; border: 1px solid var(--dash-line); border-radius: 12px; box-shadow: 0 12px 40px #22204726; }
 .dash-popover h2 { font-size: 16px; overflow-wrap: anywhere; }
 .dash-popover p { font-size: 13px; color: #6c6e84; }
-.dash-popover button, .dash-placeholder > button { display: inline-flex; align-items: center; gap: 12px; background: #eeedfa; color: var(--dash-primary); border: 0; border-radius: 7px; padding: 10px 14px; font-weight: 600; }
+.dash-popover button, .dash-popover a, .dash-placeholder > button, .dash-placeholder > a { display: inline-flex; align-items: center; gap: 12px; background: #eeedfa; color: var(--dash-primary); border: 0; border-radius: 7px; padding: 10px 14px; font-weight: 600; }
 .dash-sidebar { position: fixed; top: 64px; bottom: 0; left: 0; width: 276px; background: var(--dash-sidebar); color: white; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #706cba transparent; z-index: 40; padding: 0 10px 18px; }
 .dash-university { display: flex; align-items: center; flex-direction: column; gap: 12px; padding: 28px 12px 24px; border-bottom: 1px solid #ffffff15; }
 .dash-university > span:last-child { font-size: 9px; font-weight: 600; letter-spacing: 1.8px; color: #c2bfe9; }
-.dash-qnu { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 96px; height: 96px; border-radius: 50%; background: white; color: var(--dash-primary); font-size: 30px; font-weight: 800; letter-spacing: -2px; border: 5px solid #e3e1f7; outline: 1px solid #817bd2; }
-.dash-qnu span { font-size: 5px; letter-spacing: .5px; margin-top: 2px; }
 .dash-profile { margin: 14px 0 20px; padding: 16px 12px; display: flex; flex-direction: column; align-items: center; border: 4px solid #5651aa; border-radius: 12px; background: #37327e; text-align: center; overflow-wrap: anywhere; }
 .dash-avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: #dfddf3; color: #48428c; margin-bottom: 9px; }
 .dash-avatar svg { width: 27px; height: 27px; }
@@ -51,7 +50,7 @@
 .dash-welcome .dash-overline { color: #d0ccff; font-size: 9px; }
 .dash-welcome h2 { font-size: clamp(22px, 2.6vw, 29px); font-weight: 650; letter-spacing: -.6px; margin: 8px 0 12px; overflow-wrap: anywhere; }
 .dash-welcome p { font-size: 13px; line-height: 1.8; color: #dedbff; margin: 0 0 22px; }
-.dash-welcome button { display: inline-flex; align-items: center; gap: 20px; padding: 10px 16px; border: 0; border-radius: 7px; color: var(--dash-primary); background: white; font-size: 12px; font-weight: 650; }
+.dash-welcome button, .dash-welcome a { display: inline-flex; align-items: center; gap: 20px; padding: 10px 16px; border: 0; border-radius: 7px; color: var(--dash-primary); background: white; font-size: 12px; font-weight: 650; }
 .dash-welcome-art { flex-shrink: 0; width: 210px; min-height: 185px; border: 1px solid #ffffff30; border-radius: 100px 100px 15px 15px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 20px; text-align: center; background: #ffffff08; }
 .dash-welcome-art svg { width: 62px; height: 62px; stroke-width: .9; color: #dcd8ff; }
 .dash-welcome-art span { font-size: 12px; color: #e6e2ff; }
@@ -89,3 +88,5 @@
 @media (max-width: 1100px) { .dash-welcome-art { width: 145px; } .dash-welcome { padding: 28px; } .dash-card-grid { gap: 12px; } .dash-shortcut { padding: 18px; } .dash-bottom-grid { grid-template-columns: 1fr; } }
 @media (max-width: 800px) { .dash-header { padding: 0 14px; gap: 10px; } .dash-school { font-size: 14px; } .dash-header-actions { gap: 6px; } .dash-sidebar { top: 0; width: min(290px, calc(100vw - 40px)); z-index: 60; } .sidebar-open .dash-workspace { margin-left: 0; } .dash-backdrop { position: fixed; inset: 0; background: #18133680; border: 0; z-index: 50; } .dash-main { padding: 20px; } .dash-university { padding-top: 34px; } }
 @media (max-width: 540px) { .dash-school { font-size: 12px; max-width: 185px; } .dash-header { gap: 4px; } .dash-main { padding: 18px 16px 28px; } .dash-breadcrumb { font-size: 10px; gap: 7px; margin-bottom: 22px; } .dash-role-badge { display: none; } .dash-welcome { padding: 25px 22px; } .dash-welcome-art { display: none; } .dash-card-grid { grid-template-columns: 1fr; } .dash-shortcut { padding: 20px; } .dash-card-icon { margin-bottom: 12px; } .dash-section-heading > span { display: none; } .dash-surface { padding: 20px; } .dash-footer { padding: 18px 16px; } }
+
+.dash-qnu-logo { display: block; width: 80px; height: 80px; object-fit: contain; margin: 0 auto 12px; }

@@ -1,6 +1,6 @@
 ﻿import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import MockAdapter from 'axios-mock-adapter'
-import { Link, MemoryRouter, useLocation } from 'react-router-dom'
+import { Link, MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode } from 'react'
 import { SESSION_TOKEN_KEY } from '../features/auth/session-storage'
@@ -10,9 +10,12 @@ import { App } from './App'
 
 function RouteProbe() {
   const location = useLocation()
+  const navigate = useNavigate()
   return (
     <>
-      <output data-testid="path">{location.pathname}</output>
+      <output data-testid="path">{location.pathname + location.search + location.hash}</output>
+      <button onClick={() => navigate(-1)}>Back</button>
+      <button onClick={() => navigate(1)}>Forward</button>
       {['/login', '/admin', '/lecture', '/student', '/', '/missing'].map((path) => (
         <Link key={path} to={path}>Go {path}</Link>
       ))}
@@ -20,7 +23,7 @@ function RouteProbe() {
   )
 }
 
-function renderApp(path = '/login') {
+function renderApp(path: string | { pathname: string; state: unknown } = '/login') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
@@ -64,6 +67,22 @@ describe('Login and role routes', () => {
     setAccessToken(null)
   })
 
+  it('renders QNU branding and explains unavailable secondary actions without requests', () => {
+    renderApp()
+    expect(screen.getByRole('img', { name: 'Khuôn viên Trường Đại học Quy Nhơn' })).toHaveAttribute('src', '/img/banner_QNU.jpg')
+    expect(screen.getByRole('img', { name: 'Logo Trường Đại học Quy Nhơn' })).toHaveAttribute('src', '/img/logo.png')
+    expect(screen.getByRole('heading', { name: 'CỔNG THÔNG TIN ĐÀO TẠO' })).toBeVisible()
+    for (const name of ['Đăng nhập với Google', 'Sinh viên quên mật khẩu']) {
+      const button = screen.getByRole('button', { name })
+      expect(button).toBeDisabled()
+      expect(button).toHaveAccessibleDescription(/chưa khả dụng/)
+      fireEvent.click(button)
+    }
+    expect(screen.queryByText('Vui lòng nhập MSSV/UserID.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(mock.history.post).toHaveLength(0)
+  })
+
   it('renders labeled credentials with password autocomplete and visibility control', () => {
     renderApp()
     expect(screen.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
@@ -104,7 +123,7 @@ describe('Login and role routes', () => {
     submitForm()
     expect(await screen.findByRole('heading', { name: title })).toBeVisible()
     expect(screen.getByRole('navigation', { name: 'Chức năng' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Tổng quan' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Tổng quan' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByTestId('path')).toHaveTextContent(path)
     expect(JSON.parse(mock.history.post[0].data as string)).toEqual({ identifier: 'SV001', password: ' secret ' })
     expect(mock.history.post).toHaveLength(1)
@@ -174,7 +193,7 @@ describe('Login and role routes', () => {
     expect(mock.history.get[0].headers?.Authorization).toBeUndefined()
   })
 
-  it.each(['/admin', '/lecture', '/student', '/', '/missing'])('redirects an unauthenticated visit to %s back to login', async (path) => {
+  it.each(['/admin', '/lecture', '/student', '/'])('redirects an unauthenticated visit to %s back to login', async (path) => {
     renderApp(path)
     expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
     expect(screen.getByTestId('path')).toHaveTextContent('/login')
@@ -187,7 +206,7 @@ describe('Login and role routes', () => {
     fillForm()
     submitForm()
     await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent(path))
-    for (const target of ['/login', '/admin', '/lecture', '/student', '/', '/missing']) {
+    for (const target of ['/login', '/admin', '/lecture', '/student', '/']) {
       fireEvent.click(screen.getByRole('link', { name: `Go ${target}` }))
       await waitFor(() => expect(screen.getByTestId('path').textContent).toBe(path))
     }
@@ -214,7 +233,7 @@ describe('Login and role routes', () => {
     mock.onGet('/probe/').reply(200, {})
     renderApp()
     fillForm(); submitForm()
-    fireEvent.click(await screen.findByRole('button', { name: 'Quản lý khoa' }))
+    fireEvent.click(await screen.findByRole('link', { name: 'Quản lý khoa' }))
     expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull()
     expect(mock.history.get[0].url).toBe('/academic/api/departments/')
@@ -232,10 +251,136 @@ describe('Login and role routes', () => {
     fillForm(); submitForm()
     await screen.findByRole('heading', { name: 'Quản trị viên' })
     for (const singular of ['khoa', 'ngành', 'sinh viên', 'giảng viên']) {
-      fireEvent.click(screen.getByRole('button', { name: `Quản lý ${singular}` }))
+      fireEvent.click(screen.getByRole('link', { name: `Quản lý ${singular}` }))
       expect(await screen.findByRole('table', { name: `Danh sách ${singular}` })).toBeVisible()
       expect(screen.getByRole('button', { name: `Thêm ${singular}` })).toBeEnabled()
     }
+  })
+
+  function academicResponses() {
+    for (const resource of ['departments', 'majors', 'students', 'lecturers', 'sub-majors']) {
+      mock.onGet(`/academic/api/${resource === 'students' || resource === 'lecturers' ? 'v1/' : ''}${resource}/`).reply(200, [])
+    }
+  }
+
+  it.each([
+    { path: '/admin/departments', title: 'Quản lý khoa', list: 'khoa' },
+    { path: '/admin/majors', title: 'Quản lý ngành', list: 'ngành' },
+    { path: '/admin/students', title: 'Quản lý sinh viên', list: 'sinh viên' },
+    { path: '/admin/lecturers', title: 'Quản lý giảng viên', list: 'giảng viên' },
+  ])('restores a direct academic URL $path and keeps its active menu and breadcrumb', async ({ path, title, list }) => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    let complete!: (response: [number, unknown]) => void
+    mock.onGet('/auth/me/').reply(() => new Promise<[number, unknown]>((resolve) => { complete = resolve }))
+    academicResponses()
+    renderApp(path)
+    expect(screen.getByTestId('path').textContent).toBe(path)
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    await waitFor(() => expect(mock.history.get).toHaveLength(1))
+    await act(async () => complete([200, responseForRole(1).user]))
+    expect(await screen.findByRole('table', { name: `Danh sách ${list}` })).toBeVisible()
+    expect(screen.getByRole('heading', { name: title, level: 1 })).toBeVisible()
+    expect(screen.getByRole('link', { name: title })).toHaveAttribute('aria-current', 'page')
+    expect(document.querySelector('.dash-breadcrumb strong')).toHaveTextContent(title)
+    expect(screen.getByTestId('path').textContent).toBe(path)
+  })
+
+  it('returns to the requested page with query and hash after login', async () => {
+    const destination = '/admin/students?source=bookmark#list'
+    mock.onPost('/auth/login/').reply(200, responseForRole(1))
+    academicResponses()
+    renderApp(destination)
+    await screen.findByRole('heading', { name: 'Đăng nhập' })
+    fillForm(); submitForm()
+    expect(await screen.findByRole('table', { name: 'Danh sách sinh viên' })).toBeVisible()
+    expect(screen.getByTestId('path').textContent).toBe(destination)
+  })
+
+  it.each([
+    'https://example.com/admin', '//example.com/admin', '/\\example.com/admin',
+    '/student/profile', '/admin/missing', '/admin/%2F%2Fexample.com', '/admin\n', { path: '/admin/students' },
+  ])('rejects unsafe or unauthorized login return state %#', async (from) => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    mock.onGet('/auth/me/').reply(200, responseForRole(1).user)
+    renderApp({ pathname: '/login', state: { from } })
+    expect(await screen.findByRole('heading', { name: 'Quản trị viên' })).toBeVisible()
+    expect(screen.getByTestId('path').textContent).toBe('/admin')
+  })
+
+  it.each([
+    { role: 1, path: '/admin/profile', title: 'Thông tin cá nhân' },
+    { role: 2, path: '/lecture/profile', title: 'Thông tin cá nhân' },
+    { role: 3, path: '/student/profile', title: 'Thông tin cá nhân' },
+    { role: 1, path: '/admin/topics', title: 'Quản lý đề tài' },
+    { role: 1, path: '/admin/registrations', title: 'Quản lý đăng ký' },
+    { role: 2, path: '/lecture/topics', title: 'Quản lý đề tài' },
+    { role: 3, path: '/student/registrations', title: 'Đăng ký đề tài' },
+  ])('opens the existing placeholder at $path', async ({ role, path, title }) => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    mock.onGet('/auth/me/').reply(200, responseForRole(role).user)
+    renderApp(path)
+    expect(await screen.findByRole('heading', { name: title, level: 1 })).toBeVisible()
+    expect(screen.getByText('Đang phát triển')).toBeVisible()
+    expect(screen.getByTestId('path').textContent).toBe(path)
+  })
+
+  it.each([2, 3])('blocks role %s from deep admin URLs without calling academic APIs', async (role) => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    mock.onGet('/auth/me/').reply(200, responseForRole(role).user)
+    renderApp('/admin/students')
+    await waitFor(() => expect(screen.getByTestId('path').textContent).toBe(role === 2 ? '/lecture' : '/student'))
+    expect(mock.history.get.map(request => request.url)).toEqual(['/auth/me/'])
+  })
+
+  it.each(['/missing', '/admin/missing'])('shows 404 and preserves the unknown URL %s', async (path) => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    mock.onGet('/auth/me/').reply(200, responseForRole(1).user)
+    renderApp(path)
+    expect(await screen.findByRole('heading', { name: '404 — Không tìm thấy trang' })).toBeVisible()
+    expect(screen.getByTestId('path').textContent).toBe(path)
+    fireEvent.click(screen.getByRole('link', { name: 'Về trang chủ' }))
+    expect(await screen.findByRole('heading', { name: 'Quản trị viên' })).toBeVisible()
+  })
+
+  it('shows global 404 to guests without redirecting to login', () => {
+    renderApp('/missing')
+    expect(screen.getByRole('heading', { name: '404 — Không tìm thấy trang' })).toBeVisible()
+    expect(screen.getByTestId('path').textContent).toBe('/missing')
+  })
+
+  it('follows Back and Forward with the correct academic screen and active menu', async () => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    mock.onGet('/auth/me/').reply(200, responseForRole(1).user)
+    academicResponses()
+    renderApp('/admin')
+    fireEvent.click(await screen.findByRole('link', { name: 'Quản lý khoa' }))
+    await screen.findByRole('table', { name: 'Danh sách khoa' })
+    fireEvent.click(screen.getByRole('link', { name: 'Quản lý sinh viên' }))
+    await screen.findByRole('table', { name: 'Danh sách sinh viên' })
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(await screen.findByRole('table', { name: 'Danh sách khoa' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Quản lý khoa' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Quản lý sinh viên' })).not.toHaveAttribute('aria-current')
+    fireEvent.click(screen.getByRole('button', { name: 'Forward' }))
+    expect(await screen.findByRole('table', { name: 'Danh sách sinh viên' })).toBeVisible()
+    expect(screen.getByTestId('path').textContent).toBe('/admin/students')
+  })
+
+  it('aborts an academic request when navigating to another page', async () => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    mock.onGet('/auth/me/').reply(200, responseForRole(1).user)
+    academicResponses()
+    let complete!: (response: [number, unknown]) => void
+    mock.onGet('/academic/api/departments/').reply(() => new Promise<[number, unknown]>((resolve) => { complete = resolve }))
+    renderApp('/admin/departments')
+    await waitFor(() => expect(mock.history.get.some(request => request.url === '/academic/api/departments/')).toBe(true))
+    const request = mock.history.get.find(request => request.url === '/academic/api/departments/')!
+    fireEvent.click(screen.getByRole('link', { name: 'Quản lý sinh viên' }))
+    await screen.findByRole('table', { name: 'Danh sách sinh viên' })
+    expect(request.signal?.aborted).toBe(true)
+    await act(async () => complete([401, {}]))
+    expect(screen.getByTestId('path').textContent).toBe('/admin/students')
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('saved-token')
   })
 
   it('cancels login if the form is unmounted before a response arrives', async () => {
@@ -276,7 +421,7 @@ describe('Login and role routes', () => {
     expect(screen.getByTestId('path')).toHaveTextContent(path)
   })
 
-  it.each(['/admin', '/login', '/missing'])('uses the server role when restoring at %s', async (path) => {
+  it.each(['/admin', '/login'])('uses the server role when restoring at %s', async (path) => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
     mock.onGet('/auth/me/').reply(200, responseForRole(3).user)
     renderApp(path)

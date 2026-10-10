@@ -26,15 +26,22 @@ Run `npm run lint`, `npm run test`, and `npm run build` inside `fe/`.
 Frontend checks run independently in `.github/workflows/frontend-tests.yml`.
 Login calls `/auth/login/` using MSSV/UserID and password. Server role 1 routes
 to `/admin`, role 2 to `/lecture`, and role 3 to `/student`. Role routes require
-an authenticated session and support logout. Admin academic screens provide CRUD.
+an authenticated session and support logout. Nested admin CRUD routes are
+`/admin/departments`, `/admin/majors`, `/admin/students`, and `/admin/lecturers`.
+Sidebar/shortcut links update the URL, active menu, title and breadcrumb; browser
+Back/Forward follows page history. Each role has `/profile`; existing topic and
+registration menu routes remain development placeholders (see frontend README).
+Unknown URLs display 404. Login returns to a known requested route allowed for
+the authenticated role; external or unauthorized return destinations are rejected.
 Only the access token is saved in tab-scoped sessionStorage; F5 restores a valid
 session by validating it through `/auth/me/` before route guards redirect or
-render protected pages. Expired/invalid tokens require login again; transient
+render protected pages, preserving the current nested URL. Expired/invalid tokens require login again; transient
 restoration failures show retry/return-to-login actions. Logout clears memory
 and saved tokens. No password, refresh token or profile persistence, automatic
 token refresh, or localStorage is used. Frontend auth tests use mocked API responses;
 live Gateway/account integration has not been verified. Production hosting
-needs SPA history fallback while preserving API forwarding.
+needs SPA history fallback for nested frontend URLs and unknown frontend paths
+while preserving API forwarding. Hosting configuration is not changed by frontend routing.
 See [frontend README](fe/README.md)
 for structure, error handling, and client usage. Backend ports and routes remain unchanged.
 

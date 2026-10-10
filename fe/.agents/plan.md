@@ -1,41 +1,43 @@
-# Plan: Revise dashboard menus by role
+﻿# Plan: QNU login UI and page branding
 
 Status: Completed after user approval (`ok`).
 
 ## Ordered steps
-1. After approval, recheck current files and working tree to preserve concurrent work.
-2. Replace DASHBOARD_MENU with the requested role 1/2/3 entries; support rendering role 3 without a group heading.
-3. Separate the profile selection item from business menu order. Update header/welcome profile actions and derive quick access cards from the revised menu.
-4. Update layout tests to verify the complete business menu for each role, removed entries, role 1 independent group expansion, role 3 selection, shortcuts, profile actions and mobile drawer interactions. Preserve login/role-guard/logout regressions.
-5. Update frontend README with the exact menu structure and profile access behavior.
-6. Run npm run lint, npm run test, npm run build and scoped git diff --check. Record results and implementation limitations in this plan.
+1. After approval, recheck current source and existing working-tree changes; inspect supplied asset dimensions and styling dependencies.
+2. Replace login illustration with campus banner and implement university header/card/footer matching the supplied reference. Keep existing authentication behavior and accessible form states.
+3. Style responsive layout and reference secondary controls, clearly disabled until corresponding services exist.
+4. Add logo.png favicon in index.html. Use QNU logo for dashboard sidebar branding; define shared asset branding in dashboard-menu.ts if useful, preserving functional menu icons and role routes.
+5. Add/update automated login and layout tests for branding, accessible form/validation and preserved authentication behavior; update frontend README with UI/secondary-control limitations.
+6. Run focused tests, full npm run test, npm run lint, npm run build and scoped git diff --check. Review desktop/mobile rendering if available; record any verification limitation.
+7. Record completion/results in these task files and report changed files and verification to user.
 
 ## Expected files
-- .agents/task.md, .agents/plan.md
-- src/components/layout/dashboard-menu.ts
-- src/components/layout/MainLayout.tsx
+- .agents/task.md and .agents/plan.md
+- src/features/auth/LoginPage.tsx and login.css
+- index.html
+- src/components/layout/dashboard-menu.ts, MainLayout.tsx, dashboard.css
+- src/app/App.test.tsx and/or src/features/auth/LoginPage.test.tsx
 - src/components/layout/MainLayout.test.tsx
-- README.md (dashboard section only)
+- README.md (frontend UI notes only)
+- public/img/banner_QNU.jpg and logo.png are inputs only; no asset writes planned.
 
 ## Verification
-- Full menu content/role isolation checks, not just one example label.
-- Role 1 group collapse preserves active selection and the other group.
-- Role 3 standalone registration entry and shortcut open the correct placeholder.
-- Profile controls open the explicit profile placeholder for all roles.
-- Mobile drawer selection/dismissal, keyboard focus and logout remain verified.
-- npm run lint; npm run test; npm run build; scoped diff review/check.
-- No Django checks apply to this frontend-only task.
+- Correct banner/logo references, favicon metadata and dashboard brand image.
+- Accessible input labels, required errors after submit, password visibility, pending/error states and disabled secondary controls.
+- Existing successful login, role/ownership guards, HTTP/network errors, cancellation and redirect tests.
+- npm run test; npm run lint; npm run build; scoped diff check.
+- Desktop/mobile visual review if available; no external services required.
+- Django checks are not applicable: no backend changes in this frontend-only scope.
 
 ## Rollback
-Undo only menu restructuring and related JSX/tests/README edits from this task, restoring the prior dashboard behavior. Preserve the existing dashboard implementation and unrelated frontend/backend/user changes. No database or infrastructure rollback is needed.
+Revert only this task's source/style/metadata/test/documentation edits, preserving pre-existing edits in those files and all unrelated changes. No database, dependency or infrastructure rollback needed.
 
-## Verification results
-- Implemented exact role business menus and standalone student registration entry.
-- Profile actions now use PROFILE_ITEM, independent of business menu order; quick access cards use current role menu items.
-- Updated layout tests verify complete ordered menus, role isolation, shortcut destinations, profile actions for all roles, independent admin group collapse and mobile registration selection.
-- Targeted layout/auth integration tests: 38 passed.
-- Full frontend suite: 6 files, 78 tests passed.
-- npm run lint: passed. npm run build (TypeScript and Vite): passed.
-- Scoped git diff --check: passed with line-ending normalization warnings only.
-- Frontend README updated. No backend/API/route/authentication/config/dependency changes in this task; unrelated edits preserved.
-- Remaining limit: business pages are placeholders, not working CRUD/API integrations. No browser rendering verification performed in this task.
+## Completion and verification
+- Updated QNU login banner, university header, white card, navy submit, red heading and responsive styles. Existing authentication behavior and accessible validation remain intact.
+- Added logo favicon and replaced dashboard sidebar text branding with logo.png, shared via QNU_BRANDING in dashboard-menu.ts.
+- Google login and password reset are disabled with visible explanation; no API or architecture changes.
+- Added branding and secondary-action tests; existing role menu, authorization, redirect and authentication regressions pass.
+- Focused suite: 82 tests passed. Full suite: 179 tests passed across 10 files. npm run lint and npm run build passed.
+- Build favicon metadata and copied image bytes verified; scoped git diff --check passed (line-ending warnings only).
+- Browser visual verification unavailable: in-app browser was unavailable and connected browser inventory was empty. Desktop/mobile styling has not been screenshot-verified.
+- Updated frontend README only; existing unrelated changes were preserved. No Django checks apply to this frontend-only change.

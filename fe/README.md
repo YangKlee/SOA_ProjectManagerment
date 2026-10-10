@@ -48,7 +48,7 @@ Thêm `features/<feature>/` cho từng nghiệp vụ và `components/` cho thàn
 ## Đăng nhập và route graph
 
 ```text
-/ hoặc đường dẫn không tồn tại
+/
   ├─ chưa đăng nhập -> /login
   └─ đã đăng nhập -> trang tương ứng role
 
@@ -58,12 +58,29 @@ Thêm `features/<feature>/` cho từng nghiệp vụ và `components/` cho thàn
   └─ 3 -> /student (Sinh viên)
 
 Protected route
-  ├─ chưa đăng nhập -> /login
+  ├─ chưa đăng nhập -> /login (ghi nhớ URL đã yêu cầu)
   ├─ sai role -> trang tương ứng role của tài khoản
   └─ đúng role -> hiển thị trang
 
+Đường dẫn không tồn tại -> trang 404
 Đăng xuất -> xóa user/access token -> /login
 ```
+
+Các trang dùng nested routes và `Outlet`; menu, shortcut và mục tài khoản dùng `Link`/`NavLink`. URL là nguồn xác định trang, tiêu đề, breadcrumb và menu đang chọn. Back/Forward cập nhật trang tương ứng.
+
+| URL | Nội dung | Role |
+| --- | --- | --- |
+| `/admin`, `/lecture`, `/student` | Tổng quan theo vai trò | 1, 2, 3 tương ứng |
+| `/admin/departments` | Quản lý khoa | 1 |
+| `/admin/majors` | Quản lý ngành | 1 |
+| `/admin/students` | Quản lý sinh viên | 1 |
+| `/admin/lecturers` | Quản lý giảng viên | 1 |
+| `/admin/profile`, `/lecture/profile`, `/student/profile` | Thông tin cá nhân — Đang phát triển | Theo vai trò |
+| `/admin/topics`, `/admin/registrations` | Đề tài, đăng ký — Đang phát triển | 1 |
+| `/lecture/topics` | Đề tài — Đang phát triển | 2 |
+| `/student/registrations` | Đăng ký — Đang phát triển | 3 |
+
+Khi truy cập trang bảo vệ lúc chưa đăng nhập, frontend ghi URL vào router state và chuyển sang `/login`. Đăng nhập thành công quay về URL đã yêu cầu nếu đây là route đã biết và đúng vai trò; giữ query/hash. Địa chỉ ngoài ứng dụng, đường dẫn không hợp lệ hoặc sai vai trò chuyển về tổng quan của tài khoản. State này không được lưu riêng qua reload trang login. URL không tồn tại hiển thị 404; đường dẫn dưới role vẫn qua guard trước khi hiển thị 404.
 
 Form nhận MSSV/UserID và mật khẩu; có hiện/ẩn mật khẩu, validation, trạng thái đang gửi và thông báo lỗi an toàn. MSSV phải là UserID của tài khoản vì backend không cung cấp lookup riêng theo MSSV. Không có chọn role: role lấy từ response auth-service.
 
@@ -106,7 +123,7 @@ Token vẫn hết hạn theo backend: reload sau khi hết hạn cần đăng nh
 
 Các màn hình học vụ xử lý 401 bằng logout để xóa phiên và đưa người dùng về đăng nhập. Lỗi 403 giữ phiên và hiển thị thông báo thiếu quyền; frontend không thay thế kiểm tra quyền ở backend.
 
-Production hosting phải trả `index.html` cho đường dẫn SPA `/login`, `/admin`, `/lecture`, `/student` (kể cả khi mở trực tiếp). Giữ API prefixes chuyển đến Gateway, không rewrite API thành HTML. Không thay đổi cổng hoặc route backend.
+Production hosting phải trả `index.html` cho `/login`, các đường dẫn SPA `/admin/*`, `/lecture/*`, `/student/*` và URL frontend không tồn tại để React Router hiển thị 404 (kể cả khi mở trực tiếp hoặc F5). Giữ API prefixes chuyển đến Gateway, không rewrite API thành HTML. Không thay đổi cổng hoặc route backend.
 
 ## Cấu hình Gateway
 
@@ -117,7 +134,7 @@ VITE_API_PROXY_TARGET=http://localhost:8000
 
 Mọi API request phải dùng đường dẫn Gateway. Giữ nguyên các prefix `/auth/*`, `/academic/*`, `/registrations/*` theo contract của backend; không gọi trực tiếp cổng service hoặc Consul từ trình duyệt. Các route khác chỉ được thêm khi đã xác minh contract.
 
-Axios mặc định dùng `/` để request cùng origin với frontend. Trong development, Vite proxy các prefix `/auth`, `/academic`, `/registrations`, `/topics` đến Gateway được cấu hình bằng `VITE_API_PROXY_TARGET` (mặc định `http://localhost:8000`). Giữ nguyên đường dẫn, method, JSON body và Bearer token; Gateway tiếp tục chịu trách nhiệm route đến service. Các đường dẫn frontend `/login`, `/admin`, `/lecture`, `/student` không đi qua proxy.
+Axios mặc định dùng `/` để request cùng origin với frontend. Trong development, Vite proxy các prefix `/auth`, `/academic`, `/registrations`, `/topics` đến Gateway được cấu hình bằng `VITE_API_PROXY_TARGET` (mặc định `http://localhost:8000`). Giữ nguyên đường dẫn, method, JSON body và Bearer token; Gateway tiếp tục chịu trách nhiệm route đến service. Các đường dẫn frontend `/login`, `/admin/*`, `/lecture/*`, `/student/*` không đi qua proxy.
 
 ```text
 Browser http://localhost:5173/auth/login/
@@ -189,7 +206,7 @@ Menu nghiệp vụ nằm trong `src/components/layout/dashboard-menu.ts`:
 
 Các vai trò giữ Tổng quan và Đăng xuất. Sidebar không còn nhóm Trang cá nhân hoặc các mục học vụ/hướng dẫn cũ. Thông tin cá nhân truy cập từ bảng tài khoản trên header hoặc nút “Thông tin của tôi” ở trang tổng quan, độc lập với thứ tự menu nghiệp vụ. Trang tổng quan có lời chào, tối đa ba truy cập nhanh lấy từ menu của vai trò hiện tại và thông tin tài khoản.
 
-Việc chọn mục menu đổi nội dung trong route vai trò hiện tại, không tạo route con. Bốn mục học vụ của quản trị viên hiển thị màn hình CRUD; các mục khác vẫn hiển thị “Đang phát triển”. Reload trở về tổng quan nhưng giữ đăng nhập nếu token lưu theo tab còn hợp lệ và `/auth/me/` xác thực thành công. Chưa lưu mục menu, nội dung form hoặc từ khóa tìm kiếm qua reload. Chưa có API thông báo. Logo đang dùng chữ QNU tạm thời.
+Việc chọn mục menu điều hướng tới route con tương ứng. Bốn mục học vụ của quản trị viên hiển thị màn hình CRUD; các mục khác vẫn hiển thị “Đang phát triển”. Reload giữ nguyên URL và trang hiện tại khi token theo tab còn hợp lệ và `/auth/me/` xác thực thành công. Nội dung form và từ khóa tìm kiếm không được lưu qua reload. Chưa có API thông báo. Logo đang dùng chữ QNU tạm thời.
 
 Trên màn hình rộng hơn 800px, sidebar mặc định mở và có thể ẩn. Ở màn hình nhỏ, sidebar mặc định đóng, mở dưới dạng drawer với nền che, khóa cuộn trang, giữ focus bàn phím bên trong và đóng bằng Escape/nút đóng/nhấn nền che/chọn mục. Các bảng trên header đóng bằng Escape hoặc nhấn ra ngoài. Có liên kết bỏ qua điều hướng để đến nội dung chính.
 
@@ -203,7 +220,7 @@ Nhập từ khóa rồi bấm **Search** (hoặc Enter trong ô tìm kiếm) đ�
 
 **Thêm/Sửa** mở popup có nhãn trường, lỗi validation và lỗi API bên trong. Có nút Lưu, Hủy, Đóng; Escape đóng khi chưa gửi. Popup giữ focus bàn phím bên trong, khóa tương tác/cuộn nền và trả focus về nút mở khi đóng nếu nút còn dùng được. Trong khi lưu, không thể đóng hoặc gửi lặp. Lưu thành công và hoàn tất tải lại sẽ đóng popup.
 
-Các page nằm tại `features/academic/pages/DepartmentPage.tsx`, `MajorPage.tsx`, `StudentPage.tsx`, `LecturerPage.tsx`. Mỗi page khai báo cột, trường form và trường tìm kiếm riêng. `components/` chứa `AcademicSearch`, `AcademicTable`, `AcademicFormField`, `Modal`, `DeleteConfirmation` và khung hiển thị `AcademicManagementView`; `useAcademicManagement.ts` quản lý vòng đời request và trạng thái CRUD dùng chung. Dashboard gọi trực tiếp từng page, giữ cách chọn menu trong route vai trò hiện tại.
+Các page nằm tại `features/academic/pages/DepartmentPage.tsx`, `MajorPage.tsx`, `StudentPage.tsx`, `LecturerPage.tsx`. Mỗi page khai báo cột, trường form và trường tìm kiếm riêng. `components/` chứa `AcademicSearch`, `AcademicTable`, `AcademicFormField`, `Modal`, `DeleteConfirmation` và khung hiển thị `AcademicManagementView`; `useAcademicManagement.ts` quản lý vòng đời request và trạng thái CRUD dùng chung. `AcademicRoutePage` render từng page qua các route con của `/admin`; chuyển trang unmount page cũ và hủy request đang chờ. `DashboardHomePage` và `DashboardPlaceholderPage` nhận dữ liệu layout qua Outlet context; metadata menu/URL tập trung tại `components/layout/dashboard-menu.ts`.
 
 | Màn hình | Gateway endpoint | Trường DTO |
 | --- | --- | --- |
@@ -223,3 +240,7 @@ Popup sinh viên/giảng viên dùng `UserProfileFields` chung: họ, tên, gi�
 Xóa thành công nghĩa là xóa cả hồ sơ và tài khoản; dữ liệu có tham chiếu có thể bị từ chối (409). Lỗi 400, kể cả trường `user.*`, hiển thị dưới form. `operation_incomplete` báo cần tải lại và kiểm tra cả hai service trước khi thử lại; không tự gửi lại thao tác ghi. Form giữ dữ liệu khi thất bại. Nếu ghi thành công nhưng tải lại thất bại, thông báo lưu thành công và lỗi tải lại cùng hiển thị. Cần cấu hình `INTERNAL_SERVICE_TOKEN` khớp ở auth/academic, không đặt secret trong biến VITE hoặc trình duyệt. Xem hợp đồng và xử lý sự cố tại [academic README](../services/academic-services/README.md#composite-studentlecturer-management-v1).
 
 Tests học vụ dùng Axios Mock Adapter và Testing Library để kiểm tra CRUD của cả bốn page, DTO/method/path/Bearer, quan hệ nullable, tìm kiếm chỉ khi submit và loại trừ trường không liên quan, popup thêm/sửa, focus/trap/return, Escape/Hủy/Đóng, khóa popup khi đang lưu, giới hạn ID, lọc chuyên ngành, validation, lỗi HTTP/network/timeout, chống gửi lặp và hủy request. Integration test kiểm tra bốn menu mở đúng page và academic 401 xóa session/token. Các test này không xác minh kết nối Gateway/Consul/database thực tế.
+
+### Giao diện đăng nhập QNU
+
+Trang login sử dụng banner `public/img/banner_QNU.jpg` và logo `public/img/logo.png` theo mẫu QNU. Logo cũng được dùng làm favicon và thương hiệu sidebar; các icon chức năng, menu theo vai trò và API đăng nhập giữ nguyên. Trên màn hình nhỏ, banner ẩn để ưu tiên biểu mẫu. Nút Google và quên mật khẩu đang vô hiệu hóa, có giải thích và hướng dẫn liên hệ phòng đào tạo vì chưa tích hợp các luồng này.
