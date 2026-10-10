@@ -1,6 +1,6 @@
 from datetime import timedelta
 from unittest.mock import patch
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 from django.db import OperationalError, connection
 from django.test import SimpleTestCase, TransactionTestCase, override_settings
@@ -253,6 +253,26 @@ class AcademicClientTests(SimpleTestCase):
     def test_static_development_contract(self, fetch):
         self.client.validate(REFERENCE, "Bearer test")
         fetch.assert_called_once_with("http://academic.test:8002/api/majors/1/", {"Authorization": "Bearer test"}, 2)
+
+    @override_settings(ACADEMIC_CLIENT={**CLIENT_CONFIG, "BASE_URL": "http://127.0.0.1:8002"},
+                       CONSUL={"URL": "http://unreachable-registry.invalid:8500", "TOKEN": "registry-only"})
+    @patch.object(clients, "fetch_json")
+    def test_explicit_loopback_validates_both_references_without_registry(self, fetch):
+        fetch.side_effect = [{"major_id": "1"}, {"lecturer_id": "GV001"}]
+        self.client.validate(REFERENCE + [("advisor_id", "lecturers", "lecturer_id", "GV001")], "Bearer test")
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual([call.args for call in fetch.call_args_list], [
+            ("http://127.0.0.1:8002/api/majors/1/", {"Authorization": "Bearer test"}, 2),
+            ("http://127.0.0.1:8002/api/lecturers/GV001/", {"Authorization": "Bearer test"}, 2),
+        ])
+
+    @override_settings(ACADEMIC_CLIENT={**CLIENT_CONFIG, "BASE_URL": "http://127.0.0.1:8002"})
+    @patch.object(clients, "fetch_json", side_effect=URLError("private transport detail"))
+    def test_explicit_loopback_failure_remains_safe_and_does_not_retry(self, fetch):
+        with self.assertRaises(clients.DependencyUnavailable) as caught:
+            self.client.validate(REFERENCE, "Bearer test")
+        self.assertNotIn("private", str(caught.exception))
+        self.assertEqual(fetch.call_count, 1)
 
     @override_settings(ACADEMIC_CLIENT={**CLIENT_CONFIG, "DISCOVERY_ENABLED": True},
                        CONSUL={"URL": "http://registry:8500", "TOKEN": "acl"})

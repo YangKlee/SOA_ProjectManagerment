@@ -141,6 +141,40 @@ For local development without Consul, explicitly set it to false and set
 `ACADEMIC_BASE_URL=http://localhost:8002`. Registration opt-in and reference
 client discovery are independent settings.
 
+### Windows topic process and Docker discovery addresses
+
+If topic-service runs directly on Windows while Consul runs in Docker, a
+healthy registered address such as `host.docker.internal:8002` may be reachable
+from Docker but unreachable from the Windows topic process. A healthy Consul
+check does not establish reachability from every caller. Topic creation then
+returns `503 {"detail":"Academic validation is temporarily unavailable."}`.
+The same response can also represent discovery failure, academic authorization
+failure, timeout, or an invalid academic DTO; first compare the discovered
+address with the academic endpoint reachable from the topic host.
+
+For services running together on this Windows host, explicitly configure
+topic-service's local, untracked `.env`:
+
+```dotenv
+ACADEMIC_DISCOVERY_ENABLED=false
+ACADEMIC_BASE_URL=http://127.0.0.1:8002
+```
+
+Restart topic-service after editing `.env`; Django's source reloader is not a
+reliable way to reload environment files. Keep the existing startup bind address
+and port. This setting changes only topic's academic reference/name client.
+Consul registration, Gateway discovery, and JWT/reference validation remain
+unchanged. Do not use loopback to reach another container or host; deployment
+environments should enable discovery with addresses reachable from their callers.
+Discovery remains enabled by default in code and has no automatic static fallback.
+
+For `token_not_valid`, check that auth-service and every JWT consumer use the
+same `JWT_SIGNING_KEY`, restart any service whose key changed, and use the
+login response's access token. `INTERNAL_SERVICE_TOKEN` authenticates internal
+contracts and does not replace a user's JWT. Never log tokens or signing keys.
+Reference recovery can be verified using read-only major/lecturer detail calls
+and the academic client's validation method; creating a real topic is unnecessary.
+
 `ACADEMIC_TIMEOUT_SECONDS=2` bounds each HTTP call (finite, >0 and <=10).
 Mandatory write validation performs at most one discovery call plus two academic
 GETs, without retries; PATCH without reference fields performs no validation calls.

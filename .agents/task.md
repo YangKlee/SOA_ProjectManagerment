@@ -1,6 +1,6 @@
-﻿# Task: Fix topic-service academic validation unavailable
+# Task: Fix topic-service academic validation unavailable
 
-Status: Awaiting explicit user approval of revised scope.
+Status: Complete after explicit user approval `ok`.
 
 ## Objective and evidence
 Resolve screenshot response Academic validation is temporarily unavailable while creating a topic. The user's latest evidence supersedes the earlier JWT rejection. A fresh secret-safe local comparison now shows auth, academic and topic JWT_SIGNING_KEY values agree; do not overwrite these keys.

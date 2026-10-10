@@ -183,6 +183,16 @@ imply registration business APIs are implemented. Database schemas are unchanged
 
 ## Topic CRUD
 
+If topic creation returns `Academic validation is temporarily unavailable`,
+check discovery, topic-to-academic reachability, the forwarded JWT and reference
+DTOs. When Django services run on Windows and Consul advertises a Docker-only
+address, topic's local `.env` can explicitly use
+`ACADEMIC_DISCOVERY_ENABLED=false` and
+`ACADEMIC_BASE_URL=http://127.0.0.1:8002`; restart topic-service afterward.
+This development setting does not change Gateway/Consul registration or disable
+authentication. Deployments should use discovery addresses reachable from each
+caller. See [topic reference client](services/topic-service/README.md#academic-reference-client).
+
 Frontend `/admin/topics` lists topic code, name, advisor name and major name,
 with explicit Search by code/name and a create popup. `/lecture/topics` lists
 and searches only. The popup includes name, description, lecturer and major
