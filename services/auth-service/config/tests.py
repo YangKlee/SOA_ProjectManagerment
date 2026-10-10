@@ -81,3 +81,9 @@ class EnvSettingsTests(SimpleTestCase):
     def test_process_can_disable_consul_enabled_in_file(self):
         result = self.load_settings('CONSUL_AUTO_REGISTER=true\n', {"CONSUL_AUTO_REGISTER": "false"})
         self.assertFalse(result["consul"]["AUTO_REGISTER"])
+
+
+class AllowedHostTests(SimpleTestCase):
+    def test_consul_host_is_allowed_but_unknown_host_is_rejected(self):
+        self.assertEqual(self.client.get("/health/", HTTP_HOST="host.docker.internal").status_code, 200)
+        self.assertEqual(self.client.get("/health/", HTTP_HOST="untrusted.invalid").status_code, 400)

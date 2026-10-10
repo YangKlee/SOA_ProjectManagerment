@@ -1,20 +1,12 @@
-# Topic Service
+# Registration Service
 
-`topic-service` owns the existing `Topics` table in the shared project
-database. It uses database-first mapping (`managed = False`) and never creates
-or migrates that schema.
-
-Run on port `8004` after setting the same `JWT_SIGNING_KEY` as auth-service.
-
-- `GET /health/` is public.
-- `GET /api/topics/` requires a valid JWT.
-- Topic writes require JWT `role: 1`.
+This service currently has no registration business API implemented.
 
 
 ## Gateway service registry integration
 
-The gateway discovers `topic-service` through Consul, rather than a fixed backend URL.
-`GET /health/` is public and returns `{"status":"ok","service":"topic-service"}`.
+The gateway discovers `regist-service` through Consul, rather than a fixed backend URL.
+`GET /health/` is public and returns `{"status":"ok","service":"regist-service"}`.
 This is a liveness check and does not probe database readiness. JWT authorization
 on existing domain endpoints is unchanged.
 
@@ -24,11 +16,11 @@ Install the service's `requirements.txt` in its Python environment. Configure:
 ```dotenv
 CONSUL_AUTO_REGISTER=true
 CONSUL_URL=http://localhost:8500
-CONSUL_SERVICE_NAME=topic-service
-CONSUL_SERVICE_ID=topic-service-8004
+CONSUL_SERVICE_NAME=regist-service
+CONSUL_SERVICE_ID=regist-service-8003
 CONSUL_SERVICE_ADDRESS=host.docker.internal
-CONSUL_SERVICE_PORT=8004
-CONSUL_HEALTH_CHECK_URL=http://host.docker.internal:8004/health/
+CONSUL_SERVICE_PORT=8003
+CONSUL_HEALTH_CHECK_URL=http://host.docker.internal:8003/health/
 ALLOWED_HOSTS=localhost,127.0.0.1,[::1],host.docker.internal
 ```
 
@@ -39,7 +31,7 @@ and Consul/gateway in Docker Desktop. Use reachable container/service addresses
 for a different deployment. Start from this service directory:
 
 ```powershell
-python manage.py runserver 0.0.0.0:8004
+python manage.py runserver 0.0.0.0:8003
 ```
 
 Restart after settings/.env changes. Health checks run every 10 seconds with a

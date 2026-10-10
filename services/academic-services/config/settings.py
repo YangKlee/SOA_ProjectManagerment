@@ -28,12 +28,15 @@ SECRET_KEY = 'django-insecure-)q^*_sc5^5=d*7frmr&m2-!y39r^x-7e-%*gfl(0g(7egdp=m3
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [host.strip() for host in os.getenv(
+    "ALLOWED_HOSTS", "localhost,127.0.0.1,[::1],host.docker.internal"
+).split(",") if host.strip()]
 
 
 # Application definition
 
 INSTALLED_APPS = [
+    "config.apps.RegistryConfig",
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -153,4 +156,18 @@ MAILERS = {
     'default': {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
+}
+
+
+# Opt-in registration does not block application requests.
+CONSUL = {
+    "AUTO_REGISTER": os.getenv("CONSUL_AUTO_REGISTER", "false").lower() in {"1", "true", "yes", "on"},
+    "URL": os.getenv("CONSUL_URL", "http://localhost:8500"),
+    "SERVICE_NAME": os.getenv("CONSUL_SERVICE_NAME", "academic-service"),
+    "SERVICE_ID": os.getenv("CONSUL_SERVICE_ID", "academic-service-8002"),
+    "SERVICE_ADDRESS": os.getenv("CONSUL_SERVICE_ADDRESS", "host.docker.internal"),
+    "SERVICE_PORT": os.getenv("CONSUL_SERVICE_PORT", "8002"),
+    "HEALTH_CHECK_URL": os.getenv("CONSUL_HEALTH_CHECK_URL", "http://host.docker.internal:8002/health/"),
+    "TOKEN": os.getenv("CONSUL_TOKEN"),
+    "TIMEOUT_SECONDS": os.getenv("CONSUL_TIMEOUT_SECONDS", "3"),
 }

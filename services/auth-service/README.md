@@ -178,3 +178,45 @@ on startup and requires the configured Consul instance to be available.
 ..\..\venv\Scripts\python.exe manage.py check
 ..\..\venv\Scripts\python.exe manage.py test authentication
 ```
+
+
+## Gateway service registry integration
+
+The gateway discovers `auth-service` through Consul, rather than a fixed backend URL.
+`GET /health/` is public and returns `{"status":"ok","service":"auth-service"}`.
+This is a liveness check and does not probe database readiness. JWT authorization
+on existing domain endpoints is unchanged.
+
+Settings load this service's `.env` beside `manage.py`; process environment wins.
+Install the service's `requirements.txt` in its Python environment. Configure:
+
+```dotenv
+CONSUL_AUTO_REGISTER=true
+CONSUL_URL=http://localhost:8500
+CONSUL_SERVICE_NAME=auth-service
+CONSUL_SERVICE_ID=auth-service-8001
+CONSUL_SERVICE_ADDRESS=host.docker.internal
+CONSUL_SERVICE_PORT=8001
+CONSUL_HEALTH_CHECK_URL=http://host.docker.internal:8001/health/
+ALLOWED_HOSTS=localhost,127.0.0.1,[::1],host.docker.internal
+```
+
+Set `CONSUL_TOKEN` through the environment/file only if registry ACLs require it.
+The instance ID must be unique across running instances; change both port and ID
+when adding another instance. These address defaults target Django on Windows
+and Consul/gateway in Docker Desktop. Use reachable container/service addresses
+for a different deployment. Start from this service directory:
+
+```powershell
+python manage.py runserver 0.0.0.0:8001
+```
+
+Restart after settings/.env changes. Health checks run every 10 seconds with a
+2-second timeout and deregister critical instances after one minute. Explicit
+commands `python manage.py register_consul` and
+`python manage.py register_consul --deregister` update this instance. Admin/test
+commands do not register automatically. Keep real secrets out of source control.
+
+Existing auth automatic registration makes a background attempt at startup;
+it does not have periodic retry. If Consul was unavailable or restarted, run
+`python manage.py register_consul` again after it is available.

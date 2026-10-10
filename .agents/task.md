@@ -387,3 +387,60 @@ delete; handle safely with 400 rather than cascading or raw 500. SQLite concurre
 writes can contend; this task adds no retries/schema changes. No backup/DB
 rollback is needed because the task never modifies the shared DB. Leave existing
 unrelated working-tree changes (frontend, auth, etc.) untouched. Approval pending.
+
+# Current task: Consul-discovered API Gateway (2026-10-10)
+
+## Objective and scope
+Connect api-gateway to Consul Service Registry so routes resolve healthy service
+instances at runtime instead of fixed backend host/port proxy_pass entries.
+Keep Nginx as the HTTP gateway. Add a small Python-standard-library discovery
+worker in the gateway container to query Consul, generate upstream config,
+validate it with nginx -t and reload only when routing changes.
+Complete registry plumbing for academic-service, regist-service and topic-service;
+auth-service already has health and registration. No domain APIs are introduced.
+
+## Public contracts and architecture
+Preserve gateway port 8000, Consul 8500 and backend ports/names auth-service:8001,
+academic-service:8002, regist-service:8003, topic-service:8004. Preserve /auth/,
+/academic/, /registrations/ stripping semantics and implement the /topics/ route
+already documented in README. Forward Authorization, query strings and standard
+proxy headers. Gateway health stays public. Service-owned JWT/role checks stay
+unchanged. No cross-service ORM imports, domain models, password-policy changes
+or database operations. Existing regist-service business APIs are not implemented
+by this task; discovery does not make that service feature-complete.
+
+## Acceptance criteria
+Query Consul GET /v1/health/service/{name}?passing=true using configurable registry
+URL and optional token. Use returned service/node address and service port only;
+no hidden fixed backend fallback. Support multiple healthy instances. Validate
+registry response addresses/ports before generating config. Registry requests
+have bounded timeouts; refresh periodically, log no tokens. No healthy service
+returns safe JSON 503. Registry outage retains last good data only for a bounded
+configurable TTL, then fails closed with 503; startup works with Consul unavailable.
+Nginx reloads only validated configuration, keeps existing requests running, uses
+bounded proxy timeouts and does not blindly retry writes. Unknown routes return
+safe 404. Discovery tracks healthy-instance address changes without image rebuild.
+
+Every routed service has GET /health/ and opt-in, non-blocking Consul registration
+with unique configurable instance ID, health checks and unhealthy deregistration.
+New registration workers use bounded retry/backoff to recover registry startup
+races without blocking requests; admin/test commands must not register. Existing
+auth behavior is preserved unless minimal test/config fixes are needed.
+Environment ALLOWED_HOSTS supports host.docker.internal for container health
+checks, without wildcard host acceptance. Document bind address 0.0.0.0 for
+Windows-hosted backend services. Tests cover worker routing/failures and service
+registry plumbing. Update CI to run gateway tests and affected Django suites.
+
+## Constraints, assumptions and risks
+No database/model/schema/migration changes, new registration business logic,
+real secret edits, frontend changes or unrelated work. Do not reset Docker,
+remove volumes or stop unrelated containers. Gateway Python is infrastructure
+routing only; keep it independent of Django/domain modules. Consul is existing
+external soa-consul at host.docker.internal:8500 from gateway Docker; host Django
+uses localhost:8500. Do not create a competing Consul instance. IPv4/hostname
+support is required; valid IPv6 may be supported safely or explicitly documented.
+Image build needs network and a Python runtime added to the Nginx Alpine image.
+Gateway recreation briefly interrupts incoming traffic. Background process
+supervision and config reload failures require tests and clear logs. New service
+registration code must be local to each service, never import auth code. Topic's
+existing JWT configuration must be preserved, not expanded into unrelated fixes.

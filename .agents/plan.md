@@ -325,3 +325,78 @@ No new cross-service client requires failure/retry tests. No live requests or
 Consul registration are needed for verification. Roll back only LectureManager
 files and its settings/URL/documentation additions, preserving earlier edits;
 no database restore/migration rollback. Approval pending.
+
+# Current plan: Gateway discovery and service registry plumbing (2026-10-10)
+
+1. After explicit approval, inspect service startup/settings/test conventions
+   and verify relevant Consul HTTP and Nginx behavior from official docs.
+2. Add api-gateway Dockerfile (existing nginx base plus Python runtime), discovery
+   worker and supervised entrypoint. Replace static nginx upstream config with
+   generated config from healthy Consul results. Keep a safe bootstrap config.
+   Configure registry URL/token, refresh/timeout/stale TTL via environment.
+3. Implement validated upstream address/port generation, balanced healthy
+   instances, route prefix stripping, auth/header forwarding, 503/404 responses,
+   proxy timeouts and disabled blind write retries. Validate candidate configs
+   before atomic replacement/reload; handle registry and reload failures safely.
+4. Update api-gateway/docker-compose.yml to build the image and pass discovery
+   configuration, keeping container name and 8000 mapping. Add .env.example
+   without real secrets. Reuse existing Consul instead of creating another.
+5. Add local config/consul.py and config/apps.py plumbing plus a register_consul
+   management command in each newly registered academic/regist/topic service.
+   Add config/health.py and route for academic/regist; reuse topic health. Add
+   environment-backed Consul settings, .env loading where missing, explicit host
+   allowlist config and environment examples. Keep service-owned code independent.
+   Add python-dotenv to regist/topic manifests only if needed for these settings;
+   install approved additions only in the corresponding existing venvs.
+6. Add gateway unit/integration tests for healthy lookup, changing instances,
+   invalid registry responses, timeout/outage/staleness, no healthy instances,
+   prefix/query/header handling, safe statuses and no write replay. Use mock
+   registry/backends and isolated test containers/ports as needed. Add service
+   health/registration tests using mocks with no real DB writes.
+7. Update .github/workflows/python-tests.yml for gateway tests and topic service
+   coverage. Update root, gateway and affected service READMEs with actual
+   architecture, configs, run commands, health/discovery and failure behavior.
+8. Run smallest focused tests then affected Django check/test suites with
+   registration disabled in test processes. Build/test gateway, validate Compose,
+   and run disposable Docker integration checks. Recreate only soa-api-gateway
+   once checks pass; verify registry lookup and local HTTP behavior. Do not launch
+   background Django servers or alter real .env files; report required user restarts
+   and any unavailable backend services honestly.
+
+## Expected changed files
+- .agents/task.md, .agents/plan.md
+- api-gateway/{Dockerfile,docker-compose.yml,nginx.conf,discovery.py,entrypoint.sh,
+  .dockerignore,.env.example,README.md} and api-gateway/tests/**
+- services/{academic-services,regist-service,topic-service}/config/{settings.py,
+  urls.py,apps.py,consul.py,tests.py} plus health.py where absent and local
+  management command packages under config/management/commands/register_consul.py
+- services/{academic-services,regist-service,topic-service}/.env.example,README.md
+- services/{regist-service,topic-service}/requirements.txt if dotenv is absent
+- services/auth-service/config/settings.py, .env.example and config/tests.py
+  only for environment-backed allowed hosts supporting existing health checks
+- services/auth-service/README.md if host/run instructions need adjustment
+- README.md, .github/workflows/python-tests.yml
+
+## Verification and rollback
+Use mock data/no production DB changes. Confirm backend data models untouched and
+Authorization forwarded. Distinguish registry availability, service health and
+business endpoint availability. Keep gateway tests in CI. Roll back only task
+changes and rebuild/recreate gateway using prior static config if needed; preserve
+unrelated work, Consul container/data and all database files. Approval pending.
+
+## Verification result: Consul gateway implementation
+Implemented discovery worker, Nginx supervision/bootstrap and dynamic routing;
+added independent health/registration plumbing and tests, environment-backed
+host allowlists, service dotenv setup, CI and documentation. Preserved JWT and
+all domain models/database schemas. Existing auth registration remains a single
+startup attempt with manual re-registration documented.
+
+Passed: 9 gateway unit tests, 6 isolated Docker/Nginx integration tests (including
+actual entrypoint startup with unavailable registry), auth 18 tests, academic 103
+tests, topic 11 tests, regist 9 tests; all four Django checks, Compose validation
+and nginx -t. Live soa-api-gateway recreated and healthy on port 8000; /health/
+returns 200. The existing Consul returns zero healthy instances for all four
+services, so routed health calls correctly return 503. Backend restarts and
+CONSUL_AUTO_REGISTER=true in real local environments are still required; no
+actual .env files or database contents were changed. No Django servers started.
+Windows entrypoint line endings are normalized during Docker image build.

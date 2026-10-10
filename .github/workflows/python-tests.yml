@@ -21,6 +21,7 @@ jobs:
           - academic-services
           - regist-service
           - log-services
+          - topic-service
 
     defaults:
       run:
@@ -47,3 +48,25 @@ jobs:
 
       - name: Run tests
         run: python manage.py test
+
+  test-gateway:
+    name: Test Consul gateway
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Discovery unit tests
+        run: python -m unittest discover -s api-gateway/tests -p 'test_*.py'
+      - name: Build gateway and check Compose
+        working-directory: api-gateway
+        run: |
+          docker compose config --quiet
+          docker compose build
+      - name: Isolated Nginx discovery integration tests
+        run: >-
+          docker run --rm
+          --mount type=bind,source=${{ github.workspace }}/api-gateway/tests,target=/tests,readonly
+          --entrypoint python3 soa-api-gateway:local /tests/integration.py
