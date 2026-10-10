@@ -158,3 +158,35 @@ container is available at port 8500. Verify service health in the Consul UI.
 See [gateway README](api-gateway/README.md) for settings, tests, failure behavior
 and Windows/Docker networking. Regist-service's health/registration does not
 imply registration business APIs are implemented. Database schemas are unchanged.
+
+## Topic CRUD
+
+Topic CRUD supports GET/POST on `/topics/api/v1/topics/` and
+GET/PUT/PATCH/DELETE on `/topics/api/v1/topics/{id}/` through the gateway.
+Existing `/topics/api/topics/` routes remain available. Authenticated users may
+read; integer JWT role 1 may write. The existing topic-service:8004 ownership
+of Topics is retained as an approved exception to the AGENTS.md diagram.
+No database schema, port or gateway prefix changes are required.
+
+Topic writes validate academic references through REST with local JWT checking,
+Consul discovery by default, bounded timeouts and a process-local circuit breaker.
+Use `ACADEMIC_DISCOVERY_ENABLED=false` with `ACADEMIC_BASE_URL` only for explicit
+local development; `ACADEMIC_TIMEOUT_SECONDS` defaults to 2 seconds per call.
+Academic major lookup currently accepts numeric IDs only. Responses include
+server-controlled audit timestamps and actor. Duplicate/foreign-key conflicts
+return 409; dependency/storage failures return 503. See the
+[topic-service contract](services/topic-service/README.md#topic-crud-contract)
+for JSON examples, PUT/PATCH semantics, settings, errors and verification limits.
+
+Topic responses now return `major_name` and `avisor_name` instead of `major_id`
+and `advisor_id` on both existing/v1 routes, including successful write responses.
+Write requests still use IDs. This is an approved breaking response change.
+Topic calls academic's JWT-protected batch name lookup, which resolves lecturer
+names through auth's service-token-protected internal lookup; no cross-service
+ORM/table access is used. Configure the same nonempty `DISPLAY_NAMES_SERVICE_TOKEN`
+in auth and academic only. Academic defaults to Consul auth discovery with
+`AUTH_NAMES_DISCOVERY_ENABLED=true` and a 2-second per-call
+`AUTH_NAMES_TIMEOUT_SECONDS`; explicit `AUTH_NAMES_BASE_URL` applies only with
+discovery disabled. Missing credentials/identity names or lookup outages yield
+null names while preserving topic read/write response success. See the three
+service READMEs for batch limits, quotas, credentials and fallback behavior.

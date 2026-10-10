@@ -16,8 +16,10 @@ Including another URLconf
 """
 from django.urls import path
 from authentication.views import CurrentUserView, HealthView, LoginView, TokenRefreshView
+from authentication.display_names import UserDisplayNamesView
 
 urlpatterns = [
+    path("internal/v1/user-display-names/", UserDisplayNamesView.as_view(), name="user-display-names"),
     path("health/", HealthView.as_view(), name="check_health"),
     path("login/", LoginView.as_view(), name="login"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),

@@ -1,402 +1,48 @@
-# Plan: CRUD APIs for Departments, Majors, Sub-majors, and Students
+# Plan: Topic response names through academic-service
 
-## Ordered implementation steps
+Status: Completed after user approval (`ok`). Steps 1-7 are complete.
 
-1. Update `AGENTS.md` with a task workflow distinction: small tasks may proceed
-   without plan/confirmation; substantial tasks require their own
-   `.agents/tasks/<task-slug>/task.md` and `plan.md`, followed by explicit
-   approval.
-2. Update `AGENTS.md` with a project-specific shared database exception:
-   services may share the physical database file but retain exclusive logical
-   ownership of their tables, do not directly query other services' tables, and
-   use database-first unmanaged mappings unless an approved task authorizes a
-   schema change.
-3. Restore `database/DB_ProjectManagerment.db` from the verified
-   `DB_ProjectManagerment.pre-academic-migration-20261009.db` backup to remove
-   the code-first academic tables and migration history created in error.
-4. Create `services/topic-service` as an independent Django service, including
-   an isolated `venv`, `manage.py`, config package, service README, `.env.example`,
-   copied `requirements.txt` from academic-service, and the `topic_manager`
-   Django app (display name `topic-manager`).
-5. Configure the service for port `8004`, register the future Consul identity
-   `topic-service`, and add a public `GET /health/` endpoint. Update the root
-   architecture documentation, gateway routing, and CI only after their
-   corresponding integration is explicitly planned and approved.
-6. Add a database-first `Topic` mapping to existing `Topics` with
-   `Meta.managed = False`; do not create or run migrations. `MajorId` and
-   `AdvisorId` remain opaque IDs.
-7. Add explicit request/response DTOs, JWT authentication, and a Topic CRUD
-   API. Read requires authentication; write requires JWT `role: 1`, matching
-   the academic-service policy.
-8. Add tests for health, JWT authorization, DTO validation, and database-first
-   mappings. Run Django check/tests using topic-service's own environment.
-9. Inspect the root and gateway READMEs, then update architecture diagrams,
-   service/port tables, ownership notes, and route documentation to include
-   topic-service.
-2. Inspect the restored database schema read-only and record existing academic
-   table names, primary keys, columns, relationships, and constraints.
-   Result: map public `departments` to `Faculties`, `majors` to `Majors`,
-   `sub-majors` to `Specializations`, and `students` to `Students`.
-3. Configure academic-service's database connection to use
-   `database/DB_ProjectManagerment.db`, while preserving its model ownership
-   boundary and avoiding all auth-service table access.
-4. Replace code-first models with database-first mappings using `managed =
-   False`, explicit `db_table`/`db_column` values, string primary keys, and no
-   migration creation or application. `StudentId` remains an opaque ID and
-   must not cause a query to the `Users` table.
-5. Establish a shared `JWT_SIGNING_KEY` environment configuration in
-   auth-service and academic-service, configure Simple JWT to use it, and add
-   a non-committed example entry to each relevant environment template.
-6. Enable Django REST Framework and register the four existing academic apps.
-   Add an academic-service JWT authentication class that verifies signature and
-   expiry locally and exposes token claims without querying auth-service.
-   Add a reusable permission class that permits all authenticated callers to
-   read and permits only the integer role claim `1` to write.
-7. Define DTO validation for the existing hierarchy:
-   `Faculty -> Major -> Specialization`, and `Student -> Major/Specialization`.
-   Preserve database-side referential integrity; do not create/alter any
-   schema constraint.
-8. Add dedicated request and response DTO serializers (not direct model
-   serialization), including validation that a supplied sub-major belongs to
-   the student's supplied major.
-9. Add viewsets and per-app URL modules; mount them in `config/urls.py` under
-   `/api/` with plural resources:
-   `departments`, `majors`, `sub-majors`, and `students`.
-10. Add API tests for create/list/retrieve/update/delete, uniqueness and
-   relationship validation, HTTP 404 behavior, missing/invalid JWT (`401`),
-   read access for a valid non-1 role, and write denial for a valid JWT role
-   other than `1` (`403`).
-11. Document endpoint methods, database-first field mappings, relationships, required bearer
-   authentication and role `1`, plus error/status
-   expectations.
-12. Run `python manage.py check` and `python manage.py test` from
-   `services/academic-services`; report any pre-existing failures separately.
-13. Commit each manager app independently after its mapping and tests pass;
-    commit the academic-service API README after the app commits.
+## Ordered steps
+1. Add an explicit display-name-only DTO and read-only batch endpoint in auth-service. Use constant-time service-token comparison, deny when unconfigured, and constrain request size/ID count. Preserve public auth contracts.
+2. Add an academic batch name-resolution endpoint protected by existing JWT authentication, accessible to authenticated readers even though POST carries a read-only batch. Query only academic-owned Majors and Lecturers. Resolve lecturer identity names through the new auth contract using the dedicated service credential, Consul discovery, bounded 2-second per-call timeout and safe failure handling. No cross-service ORM.
+3. Extend topic's HTTP client to fetch names from academic in batches of <=100 IDs with per-request deduplication and one discovery resolution per enrichment operation. Reuse the existing timeout, circuit/failure conventions and redirect protections. Keep write validation separate from optional name resolution.
+4. Replace response fields with nullable major_name and avisor_name. Supply enriched DTO data outside the serializer; keep network access outside serialization and outside write transactions. Apply to list/detail and successful write responses. Return null for missing/unavailable names, without replacing IDs in storage or request DTOs.
+5. Add automated tests in all three services for exact response fields, batch deduplication, correct full-name composition, nullable advisor, missing references/names, authentication/role behavior, internal-token security, discovery/timeout/malformed payloads and fallback after successful writes. Use mocked network and disposable databases only.
+6. Update root/service READMEs, .env.example files and task/plan status. Describe breaking response changes, exact spelling, internal contract, environment credential setup, lookup limits, timeout/call counts, and fallback semantics.
+7. Run each affected service's installed Python environment: python manage.py check and python manage.py test. Review scoped git diff --check and ensure no database, migration, dependency, gateway or unrelated files changed. Existing CI already covers all three services; change CI only if verification commands change.
 
-## Expected files to change
-
-- `.agents/task.md`, `.agents/plan.md`
-- `AGENTS.md`
-- `services/topic-service/**`
-- `services/academic-services/requirements.txt` (source only; unchanged)
-- `README.md`
-- `api-gateway/README.md`
-- `services/auth-service/config/settings.py`, `.env.example`
-- `services/academic-services/config/settings.py`, `config/urls.py`
-- `services/academic-services/config/settings.py` (shared database path)
-- `services/academic-services/.env.example`
-- `services/academic-services` JWT authentication/permission module
-- `services/academic-services/{DeparmentManager,MajorManager,SubMajorManager,StudentManager}/models.py`
-- `services/academic-services/{DeparmentManager,MajorManager,SubMajorManager,StudentManager}/serializers.py`
-- `services/academic-services/{DeparmentManager,MajorManager,SubMajorManager,StudentManager}/views.py`
-- `services/academic-services/{DeparmentManager,MajorManager,SubMajorManager,StudentManager}/urls.py`
-- `services/academic-services/{DeparmentManager,MajorManager,SubMajorManager,StudentManager}/tests.py`
-- Existing academic migration files will be removed from source control; no new
-  migration files will be created for database-first mappings
-- `services/academic-services/README.md` (and root `README.md` only if route
-  documentation needs extending)
-
-## Verification
-
-- Execute Django system checks.
-- Execute academic-service tests, including all four app test modules.
-- Confirm response codes and validation behavior via the Django REST Framework
-  test client.
-- Confirm any signed access token can read, only `role: 1` can write, another
-  valid role receives `403` on writes, and malformed/expired tokens receive
-  `401`.
-- Confirm all mapped tables and columns match the restored shared database and
-  `makemigrations --check` reports no planned model migration.
-
-## Rollback
-
-- Restore the pre-migration backup before any database-first work. No schema
-  migrations are permitted in this task; rollback code mappings through Git
-  commits without altering the shared database.
-
-# Current plan: Department CRUD handlers in app views (2026-10-10)
-
-1. After explicit approval, inspect local test/settings conventions read-only.
-2. Replace Department CRUD inheritance with explicit GenericAPIView-based
-   list/create and detail classes in DeparmentManager/views.py. Preserve DTO
-   handling and security.permissions.ReadOnlyOrRoleOneWrite; use the existing
-   from_department conversion directly instead of runtime alias assignment.
-3. Implement GET/POST only for the collection and GET/PUT/PATCH/DELETE only for
-   details. Preserve URL patterns and successful response codes.
-4. Expand DeparmentManager/tests.py for CRUD success, invalid payloads, missing
-   objects, permission failures and detail POST 405, without production DB writes.
-5. Run focused Department tests, then python manage.py check and python manage.py
-   test in academic-services using its available environment. Review the diff.
-
-## Expected changed files
-- .agents/task.md and .agents/plan.md (current task sections)
-- services/academic-services/DeparmentManager/views.py
-- services/academic-services/DeparmentManager/tests.py
+## Expected files
+- topic-service/topic_manager/{serializers,views,clients,tests}.py; dedicated enrichment module if useful; topic-service README and .env.example.
+- academic-services/config/{urls,settings}.py; new display-name DTO/view/client/test module(s) within LectureManager or a local lookup package; academic README and .env.example.
+- auth-service/config/{urls,settings}.py; authentication display-name DTO/view/permission/test additions or dedicated local module(s); auth README and .env.example.
+- Root README.md, .agents/task.md and .agents/plan.md.
+No schema, model mapping, migration, dependency or infrastructure changes are planned.
 
 ## Verification and rollback
-Assert response DTOs/statuses and read/write permission policy; confirm other
-apps still use unchanged shared CRUD. No inter-service clients are changed.
-Undo only this task's view/test changes to roll back; no database rollback is
-needed. No README changes are needed because paths, configuration and supported
-CRUD contracts remain unchanged; detail POST is explicitly rejected.
+Check/test all three affected services, mocked contract/security/failure tests, DTO field assertions and batched lookup counts; preserve existing CRUD regression coverage. No live service calls or real database writes. Revert only this task's reviewed file-specific changes to restore ID responses and remove the new optional contracts/settings; preserve prior CRUD implementation and unrelated work. There is no data/schema rollback.
 
-## Revised implementation plan (supersedes current steps above)
-1. After approval, inspect academic-service settings and test conventions.
-2. Create DeparmentManager/services.py with Department list/get/create/update/
-   delete operations. Keep record lookup, business operations and persistence
-   here; use domain/model exceptions, with no DRF Response or HTTP dependency.
-3. Refactor DeparmentManager/views.py into explicit collection/detail HTTP
-   handlers. Preserve authentication and ReadOnlyOrRoleOneWrite. Validate input
-   with request DTOs, call services, serialize results with response DTOs and
-   translate missing records into 404. Remove runtime DTO alias assignment.
-   Do not add ORM calls or business rules to views. Keep routes unchanged and
-   return 405 for detail POST.
-4. Expand DeparmentManager/tests.py with isolated service tests and view tests
-   for delegation, CRUD responses, validation, missing records, authentication
-   and role failures, plus detail POST 405. Never write the shared project DB.
-5. Run focused tests, academic-service manage.py check and manage.py test using
-   the available environment. Review changed files and report limitations.
+---
 
-Revised implementation files: DeparmentManager/services.py (new), views.py,
-tests.py; planning files only before approval. Shared CRUD, models, DTO contracts,
-URLs, infrastructure and database remain outside implementation scope.
-Rollback: undo only these service/view/test changes, preserving other user work;
-no schema or database rollback is necessary.
+# Current plan: Admin login diagnosis and minimal fix
+Status: Awaiting explicit approval. Earlier topic-name plan remains pending.
 
-# Current plan: Services for Major, SubMajor and Student (2026-10-10)
+1. Obtain the failing admin UserId/email and confirm whether the running auth-service uses this checkout and database (no password requested).
+2. Inspect only the relevant auth-owned record in read-only mode; report presence, role and password format without disclosing credentials. Inspect startup/database selection as needed without reading or printing secrets or calling external services.
+3. Reproduce any identified code defect with mocked Users data and add a focused regression test. Apply a minimal fix only if it preserves the existing plaintext login contract. If diagnosis requires creating/resetting an account, supporting password hashes, or changing database configuration, update task/plan and obtain explicit approval for that concrete scope first.
+4. For a code fix, run venv/Scripts/python.exe manage.py check and manage.py test in services/auth-service; check the scoped diff. Update documentation only if behavior changes and has been approved.
+5. Record findings and remaining limitations. Do not modify the shared database during tests.
 
-1. After explicit approval, inspect the three apps' models and existing tests,
-   plus local conventions, without changing models/schema.
-2. Add services.py per app with list/get/create/update/delete operations and
-   relationship validation. Define app-local business validation exceptions
-   with field errors, independent of DRF and HTTP. Validate before persistence;
-   Student updates use merged existing/proposed state.
-3. Simplify request serializers to DTO field/type validation; remove ORM-based
-   relationship checks now owned by services. Preserve response DTO contracts.
-4. Refactor each views.py to explicit GenericAPIView collection/detail handlers,
-   preserving permissions, validating DTOs and calling services. Translate
-   missing records to 404 and service validation errors to 400; serialize results.
-   Remove runtime response DTO aliases and inherited CRUD. Detail POST is 405.
-5. Expand each app's tests.py with isolated service tests and endpoint tests:
-   CRUD delegation, parent relationship failures, Student partial update cases,
-   malformed payloads, missing records, token/role failures and detail POST 405.
-6. Run focused tests for the three apps, then academic-service manage.py check
-   and manage.py test using its existing venv. Review diff and changed-file scope.
-
-## Expected files to change
-- .agents/task.md, .agents/plan.md
-- services/academic-services/MajorManager/{services.py,views.py,serializers.py,tests.py}
-- services/academic-services/SubMajorManager/{services.py,views.py,serializers.py,tests.py}
-- services/academic-services/StudentManager/{services.py,views.py,serializers.py,tests.py}
+## Expected files
+.agents/task.md and .agents/plan.md. Conditionally services/auth-service/authentication/views.py and authentication/tests.py for a confirmed compatible login defect. No other files are authorized by this plan.
 
 ## Verification and rollback
-Test service behavior and HTTP responses with no shared project DB writes.
-Re-run Department tests as part of the full suite. No inter-service client is
-changed. No README change is needed because deployed architecture, URLs, DTOs
-and configuration are preserved. Roll back only these task-specific source/test
-edits; no database restore or migration is required. Approval pending.
+Use isolated mocked account fixtures for role 1 success, invalid credentials, token role, refresh/profile and existing login regressions. Revert only changes from this task; preserve existing work. No database rollback is needed because this plan authorizes no database writes.
 
-# Current plan: Docker Desktop and gateway startup (2026-10-10)
-
-1. After approval, launch the existing Docker Desktop executable with
-   Start-Process -WindowStyle Hidden; do not start containers before approval.
-2. Poll docker info with short bounded waits, providing progress updates. If
-   startup fails, inspect local diagnostics read-only; do not reset/install.
-3. From api-gateway, validate docker compose config, then docker compose up -d
-   using the current desktop-linux context and existing configuration.
-4. Verify docker compose ps, container logs and docker compose exec -T
-   api-gateway nginx -t. Probe local port 8000/auth/health/ if auth is running;
-   report upstream unavailability separately from Docker engine startup.
-
-## Expected writes and verification
-Only .agents/task.md and .agents/plan.md are repository changes. Docker Desktop
-may update its runtime state; Compose may fetch the existing image and create/
-start the gateway container/network. No code changes, so no new automated tests
-are needed; use runtime checks above.
-
-## Rollback
-Stop only the gateway started by this task if requested; do not remove volumes
-or affect unrelated containers. Leave existing Docker data/configuration intact.
-Do not shut down Docker Desktop automatically if other workloads are running.
-
-# Current plan: Remove password hash verification from login (2026-10-10)
-
-1. After explicit approval, replace check_password in authentication/views.py
-   with hmac.compare_digest on supplied/stored password UTF-8 bytes. Preserve
-   user lookup, error response and JWT issuance; no secret logging.
-2. Expand authentication/tests.py using mocked Users lookups to verify login
-   via accepted identifiers, exact password comparison (including whitespace/
-   Unicode), wrong password, missing user, invalid fields, safe response DTOs,
-   signed JWT claims, token refresh and authenticated profile behavior.
-3. Update root README.md and services/auth-service/README.md to document
-   plaintext comparison, unchanged JWT requirements and the production risk.
-4. Run auth-service venv python manage.py check and python manage.py test.
-   Review diff scope and confirm no database/configuration changes.
-
-## Expected changed files
-- .agents/task.md, .agents/plan.md
-- services/auth-service/authentication/views.py
-- services/auth-service/authentication/tests.py
-- services/auth-service/README.md
-- README.md
-
-## Verification and rollback
-Only mocked accounts are used in tests. Keep existing Consul tests passing.
-No live login calls are needed before approval or for verification. Rollback
-only this task's view/test/documentation edits to restore check_password; no
-DB rollback is needed because no stored values are modified.
-
-# Current plan: Per-service .env loading (2026-10-10)
-
-1. After explicit approval, verify a compatible python-dotenv release using
-   official package metadata. Add a pinned version to the two requirements.txt
-   files and install only in the corresponding existing venvs.
-2. In both config/settings.py files, import load_dotenv and call
-   load_dotenv(BASE_DIR / '.env', override=False) immediately after BASE_DIR,
-   before reading any environment-backed configuration.
-3. Add config/tests.py in each service using temporary settings/.env fixtures
-   and isolated subprocess environments. Cover quoted JWT values, different
-   working directories, environment precedence, missing file and auth Consul
-   parsing. Use dummy secrets and never overwrite actual .env files.
-4. Update root README, auth README and academic README with .env locations,
-   environment precedence, installation/restart instructions and shared JWT key
-   requirement. Do not put real secrets into documentation.
-5. Run focused settings tests then both service manage.py check and manage.py
-   test using their venvs. Set CONSUL_AUTO_REGISTER=false only in verification
-   child processes. Verify resulting keys agree without printing secret values
-   if actual .env files exist; do not restart servers automatically.
-6. Review CI: current matrix installs each service requirements and runs full
-   checks/tests, so no workflow change is expected unless commands must change.
-
-## Expected files to change
-- .agents/task.md, .agents/plan.md
-- services/{auth-service,academic-services}/requirements.txt
-- services/{auth-service,academic-services}/config/settings.py
-- services/{auth-service,academic-services}/config/tests.py (new)
-- services/{auth-service,academic-services}/README.md
-- README.md
-
-## Verification and rollback
-No real DB writes, containers or live API requests are needed. Runtime Consul
-registration is disabled in verification processes. Roll back only task-specific
-settings/test/dependency/documentation edits; remove the added package from these
-venvs if requested, without disturbing existing dependencies. No schema rollback.
-Approval pending.
-
-# Current plan: Implement LectureManager (2026-10-10)
-
-1. After explicit approval, create LectureManager/__init__.py and apps.py;
-   register LectureManager in academic config/settings.py.
-2. Add unmanaged Lecturer model with explicit Lecturers mapping, string PK and
-   nullable Department ForeignKey. Do not create a Users model/relation or any
-   migration. Preserve database constraints and DO_NOTHING deletion behavior.
-3. Add explicit request/response DTO serializers with lecturer_id (nonblank,
-   string) and optional nullable department_id. Responses exclude identity data.
-4. Add services.py with list/get/create/update/delete, academic Department
-   existence validation and primary-key immutability. Wrap writes in transactions
-   and translate IntegrityError to business validation exceptions; never expose
-   raw schema/SQL. No direct auth or Topics access.
-5. Add explicit views.py calling services, with existing ReadOnlyOrRoleOneWrite
-   and default AcademicJWTAuthentication. Map service validation to 400 and
-   missing Lecturer to 404. Add urls.py using lecturers and string detail IDs;
-   include under existing /api/ in config/urls.py.
-6. Add LectureManager/tests.py for mapping, DTOs, CRUD, parent validation,
-   duplicate/integrity failures, unchanged vs changed PK, delete constraints,
-   service delegation, missing resources, JWT failure and role policy. Use mocks
-   and/or isolated temporary/in-memory storage; never write the shared DB.
-7. Update root and academic READMEs with ownership, endpoint table, example JSON,
-   JWT role requirements, error expectations and identity-validation limitation.
-8. Run focused LectureManager tests, academic manage.py check and full manage.py
-   test with existing venv. Review diff; current CI auto-discovers tests and
-   installs unchanged dependencies, so no workflow edit is expected.
-
-## Expected changed files
-- .agents/task.md and .agents/plan.md
-- services/academic-services/LectureManager/{__init__.py,apps.py,models.py,
-  serializers.py,services.py,views.py,urls.py,tests.py}
-- services/academic-services/config/{settings.py,urls.py}
-- services/academic-services/README.md and README.md
-
-## Verification and rollback
-Assert SQL mapping/column metadata, all HTTP methods and supported JSON fields,
-string ID routing, local JWT auth, role authorization and safe validation/errors.
-No new cross-service client requires failure/retry tests. No live requests or
-Consul registration are needed for verification. Roll back only LectureManager
-files and its settings/URL/documentation additions, preserving earlier edits;
-no database restore/migration rollback. Approval pending.
-
-# Current plan: Gateway discovery and service registry plumbing (2026-10-10)
-
-1. After explicit approval, inspect service startup/settings/test conventions
-   and verify relevant Consul HTTP and Nginx behavior from official docs.
-2. Add api-gateway Dockerfile (existing nginx base plus Python runtime), discovery
-   worker and supervised entrypoint. Replace static nginx upstream config with
-   generated config from healthy Consul results. Keep a safe bootstrap config.
-   Configure registry URL/token, refresh/timeout/stale TTL via environment.
-3. Implement validated upstream address/port generation, balanced healthy
-   instances, route prefix stripping, auth/header forwarding, 503/404 responses,
-   proxy timeouts and disabled blind write retries. Validate candidate configs
-   before atomic replacement/reload; handle registry and reload failures safely.
-4. Update api-gateway/docker-compose.yml to build the image and pass discovery
-   configuration, keeping container name and 8000 mapping. Add .env.example
-   without real secrets. Reuse existing Consul instead of creating another.
-5. Add local config/consul.py and config/apps.py plumbing plus a register_consul
-   management command in each newly registered academic/regist/topic service.
-   Add config/health.py and route for academic/regist; reuse topic health. Add
-   environment-backed Consul settings, .env loading where missing, explicit host
-   allowlist config and environment examples. Keep service-owned code independent.
-   Add python-dotenv to regist/topic manifests only if needed for these settings;
-   install approved additions only in the corresponding existing venvs.
-6. Add gateway unit/integration tests for healthy lookup, changing instances,
-   invalid registry responses, timeout/outage/staleness, no healthy instances,
-   prefix/query/header handling, safe statuses and no write replay. Use mock
-   registry/backends and isolated test containers/ports as needed. Add service
-   health/registration tests using mocks with no real DB writes.
-7. Update .github/workflows/python-tests.yml for gateway tests and topic service
-   coverage. Update root, gateway and affected service READMEs with actual
-   architecture, configs, run commands, health/discovery and failure behavior.
-8. Run smallest focused tests then affected Django check/test suites with
-   registration disabled in test processes. Build/test gateway, validate Compose,
-   and run disposable Docker integration checks. Recreate only soa-api-gateway
-   once checks pass; verify registry lookup and local HTTP behavior. Do not launch
-   background Django servers or alter real .env files; report required user restarts
-   and any unavailable backend services honestly.
-
-## Expected changed files
-- .agents/task.md, .agents/plan.md
-- api-gateway/{Dockerfile,docker-compose.yml,nginx.conf,discovery.py,entrypoint.sh,
-  .dockerignore,.env.example,README.md} and api-gateway/tests/**
-- services/{academic-services,regist-service,topic-service}/config/{settings.py,
-  urls.py,apps.py,consul.py,tests.py} plus health.py where absent and local
-  management command packages under config/management/commands/register_consul.py
-- services/{academic-services,regist-service,topic-service}/.env.example,README.md
-- services/{regist-service,topic-service}/requirements.txt if dotenv is absent
-- services/auth-service/config/settings.py, .env.example and config/tests.py
-  only for environment-backed allowed hosts supporting existing health checks
-- services/auth-service/README.md if host/run instructions need adjustment
-- README.md, .github/workflows/python-tests.yml
-
-## Verification and rollback
-Use mock data/no production DB changes. Confirm backend data models untouched and
-Authorization forwarded. Distinguish registry availability, service health and
-business endpoint availability. Keep gateway tests in CI. Roll back only task
-changes and rebuild/recreate gateway using prior static config if needed; preserve
-unrelated work, Consul container/data and all database files. Approval pending.
-
-## Verification result: Consul gateway implementation
-Implemented discovery worker, Nginx supervision/bootstrap and dynamic routing;
-added independent health/registration plumbing and tests, environment-backed
-host allowlists, service dotenv setup, CI and documentation. Preserved JWT and
-all domain models/database schemas. Existing auth registration remains a single
-startup attempt with manual re-registration documented.
-
-Passed: 9 gateway unit tests, 6 isolated Docker/Nginx integration tests (including
-actual entrypoint startup with unavailable registry), auth 18 tests, academic 103
-tests, topic 11 tests, regist 9 tests; all four Django checks, Compose validation
-and nginx -t. Live soa-api-gateway recreated and healthy on port 8000; /health/
-returns 200. The existing Consul returns zero healthy instances for all four
-services, so routed health calls correctly return 503. Backend restarts and
-CONSUL_AUTO_REGISTER=true in real local environments are still required; no
-actual .env files or database contents were changed. No Django servers started.
-Windows entrypoint line endings are normalized during Docker image build.
+## Verification results
+- topic-service: manage.py check passed; full manage.py test passed (37 tests).
+- academic-services: manage.py check passed; full manage.py test passed (116 tests).
+- auth-service: manage.py check passed; full manage.py test passed (23 tests).
+- All HTTP tests mock transports; topic persistence regression tests use disposable SQLite. No live external service calls or real database writes were required.
+- Scoped diff/whitespace checks passed. Existing CI already covers these commands; no CI/dependency/schema/gateway updates needed.
+- Added per-cache lookup quotas and bounded JSON parsers within the approved contract/resource-limit scope.
+- Runtime setup still requires a matching service token in auth/academic environments; live integration remains unverified.

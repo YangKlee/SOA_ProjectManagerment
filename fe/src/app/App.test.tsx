@@ -101,6 +101,8 @@ describe('Login and role routes', () => {
     fillForm('  SV001  ', ' secret ')
     submitForm()
     expect(await screen.findByRole('heading', { name: title })).toBeVisible()
+    expect(screen.getByRole('navigation', { name: 'Chức năng' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Tổng quan' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByTestId('path')).toHaveTextContent(path)
     expect(JSON.parse(mock.history.post[0].data as string)).toEqual({ identifier: 'SV001', password: ' secret ' })
     expect(mock.history.post).toHaveLength(1)

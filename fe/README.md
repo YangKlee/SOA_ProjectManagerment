@@ -1,6 +1,6 @@
 # Frontend — Quản lý đồ án tốt nghiệp
 
-React + Vite + TypeScript, dùng npm, React Router và Axios client chung. Đã triển khai trang đăng nhập và điều hướng/bảo vệ route theo role. Các trang quản trị viên, giảng viên và sinh viên hiện là khung ban đầu có đăng xuất; CRUD nghiệp vụ chưa được triển khai. Luồng auth đã được kiểm thử bằng API mock, chưa xác minh với tài khoản backend thực tế.
+React + Vite + TypeScript, dùng npm, React Router và Axios client chung. Đã triển khai trang đăng nhập và điều hướng/bảo vệ route theo role. Các trang quản trị viên, giảng viên và sinh viên dùng chung dashboard với header, sidebar theo vai trò, thông tin tài khoản và đăng xuất; CRUD nghiệp vụ chưa được triển khai. Luồng auth đã được kiểm thử bằng API mock, chưa xác minh với tài khoản backend thực tế.
 
 ## Chạy tại máy
 
@@ -169,3 +169,21 @@ Vitest, Testing Library và Axios Mock Adapter kiểm tra login, payload/respons
 Không chạy Django checks cho thay đổi chỉ thuộc frontend. Test mock không xác nhận CORS hoặc tích hợp đăng nhập với service đang chạy; cần kiểm thử bằng tài khoản hợp lệ qua Gateway trong môi trường triển khai.
 
 Tài liệu chính thức: [Vite](https://vite.dev/guide/), [Axios instance](https://axios-http.com/docs/instance), [Vitest](https://vitest.dev/guide/), [React Router](https://reactrouter.com/start/declarative/routing).
+
+## Dashboard theo vai trò
+
+`/admin`, `/lecture`, `/student` dùng `src/components/layout/MainLayout.tsx` với màu chủ đạo `#363199` và trắng. Header có tên trường, nút đóng/mở sidebar, bảng thông báo và bảng tài khoản. Sidebar hiển thị tên, UserID và vai trò từ phiên đăng nhập, các nhóm menu đóng/mở độc lập, mục đang chọn và nút đăng xuất.
+
+Menu nghiệp vụ nằm trong `src/components/layout/dashboard-menu.ts`:
+
+- Role 1 (quản trị viên): **Học vụ** gồm Quản lý khoa, Quản lý ngành, Quản lý sinh viên, Quản lý giảng viên; **Đề tài** gồm Quản lý đề tài, Quản lý đăng ký.
+- Role 2 (giảng viên): **Đề tài** gồm Quản lý đề tài.
+- Role 3 (sinh viên): mục **Đăng ký đề tài** trực tiếp, không có tiêu đề nhóm.
+
+Các vai trò giữ Tổng quan và Đăng xuất. Sidebar không còn nhóm Trang cá nhân hoặc các mục học vụ/hướng dẫn cũ. Thông tin cá nhân truy cập từ bảng tài khoản trên header hoặc nút “Thông tin của tôi” ở trang tổng quan, độc lập với thứ tự menu nghiệp vụ. Trang tổng quan có lời chào, tối đa ba truy cập nhanh lấy từ menu của vai trò hiện tại và thông tin tài khoản.
+
+Việc chọn mục menu hiện chỉ đổi nội dung trong route vai trò hiện tại, hiển thị “Đang phát triển”; chưa có route con, CRUD, dữ liệu học vụ hoặc API thông báo. Reload trở về tổng quan và cần đăng nhập lại theo cơ chế phiên hiện tại. Không hiển thị thống kê hoặc số thông báo giả. Logo đang dùng chữ QNU tạm thời, cần thay bằng ảnh chính thức khi có tài sản được cung cấp.
+
+Trên màn hình rộng hơn 800px, sidebar mặc định mở và có thể ẩn. Ở màn hình nhỏ, sidebar mặc định đóng, mở dưới dạng drawer với nền che, khóa cuộn trang, giữ focus bàn phím bên trong và đóng bằng Escape/nút đóng/nhấn nền che/chọn mục. Các bảng trên header đóng bằng Escape hoặc nhấn ra ngoài. Có liên kết bỏ qua điều hướng để đến nội dung chính.
+
+Test layout kiểm tra menu/identity của cả ba vai trò, fallback tên, sidebar, nhóm menu, chọn mục, truy cập nhanh, thông báo/tài khoản, logout, drawer mobile và thay đổi breakpoint. Integration tests tiếp tục kiểm tra đăng nhập, role guards và xóa token khi đăng xuất. Chạy `npm run lint`, `npm run test`, `npm run build` để xác minh.

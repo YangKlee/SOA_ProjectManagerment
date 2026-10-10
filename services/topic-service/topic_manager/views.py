@@ -1,21 +1,85 @@
-from rest_framework.generics import GenericAPIView,get_object_or_404
-from rest_framework.permissions import AllowAny,BasePermission,SAFE_METHODS
+import logging
+import re
+import uuid
+
+from django.db import OperationalError
+from rest_framework.generics import GenericAPIView
+from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
 from rest_framework.response import Response
+
+from . import services
 from .models import Topic
-from .serializers import TopicRequestDTO,TopicResponseDTO
+from .enrichment import topic_response
+from .serializers import TopicRequestDTO
+
+LOG = logging.getLogger(__name__)
+
+
 class RoleOneWrite(BasePermission):
- def has_permission(self,r,v): return bool(r.user and r.user.is_authenticated and (r.method in SAFE_METHODS or (r.auth and r.auth.get('role')==1)))
+    message = "Only users with role 1 may modify topics."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and (
+            request.method in SAFE_METHODS or (
+                request.auth is not None and type(request.auth.get("role")) is int and request.auth.get("role") == 1)))
+
+
 class HealthView(GenericAPIView):
- permission_classes=[AllowAny]
- def get(self,r): return Response({'status':'ok','service':'topic-service'})
-class TopicListCreateView(GenericAPIView):
- permission_classes=[RoleOneWrite];serializer_class=TopicRequestDTO
- def get(self,r): return Response(TopicResponseDTO(Topic.objects.all(),many=True).data)
- def post(self,r):
-  s=self.get_serializer(data=r.data);s.is_valid(raise_exception=True);o=Topic.objects.create(**s.validated_data);return Response(TopicResponseDTO(o).data,status=201)
-class TopicDetailView(TopicListCreateView):
- def obj(self):return get_object_or_404(Topic,pk=self.kwargs['pk'])
- def get(self,r,pk):return Response(TopicResponseDTO(self.obj()).data)
- def patch(self,r,pk):
-  o=self.obj();s=self.get_serializer(o,data=r.data,partial=True);s.is_valid(raise_exception=True);[setattr(o,k,v) for k,v in s.validated_data.items()];o.save();return Response(TopicResponseDTO(o).data)
- def delete(self,r,pk):self.obj().delete();return Response(status=204)
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({"status": "ok", "service": "topic-service"})
+
+
+class TopicAPIView(GenericAPIView):
+    permission_classes = [RoleOneWrite]
+    serializer_class = TopicRequestDTO
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        request_id = request.headers.get("X-Request-ID", "")
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", request_id):
+            request_id = uuid.uuid4().hex
+        response["X-Request-ID"] = request_id
+        if request.method not in SAFE_METHODS:
+            LOG.info("Topic operation method=%s status=%s request_id=%s",
+                     request.method, response.status_code, request_id)
+        return response
+
+    def handle_exception(self, exc):
+        if isinstance(exc, OperationalError):
+            exc = services.StorageUnavailable()
+        return super().handle_exception(exc)
+
+    def save(self, request, pk=None, partial=False):
+        dto = self.get_serializer(data=request.data, partial=partial)
+        dto.is_valid(raise_exception=True)
+        obj = services.save_topic(dto.validated_data, str(request.auth["user_id"]),
+                                  request.headers.get("Authorization", ""), pk, partial)
+        return Response(topic_response(obj, request.headers.get("Authorization", "")),
+                        status=201 if pk is None else 200)
+
+
+class TopicListCreateView(TopicAPIView):
+    def get(self, request):
+        return Response(topic_response(Topic.objects.order_by("topic_id"),
+                                       request.headers.get("Authorization", ""), many=True))
+
+    def post(self, request):
+        return self.save(request)
+
+
+class TopicDetailView(TopicAPIView):
+    def get(self, request, pk):
+        return Response(topic_response(services.get_topic(pk), request.headers.get("Authorization", "")))
+
+    def put(self, request, pk):
+        return self.save(request, pk)
+
+    def patch(self, request, pk):
+        return self.save(request, pk, partial=True)
+
+    def delete(self, request, pk):
+        services.delete_topic(pk)
+        return Response(status=204)

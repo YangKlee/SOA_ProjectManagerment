@@ -127,6 +127,7 @@ STATIC_URL = 'static/'
 # This value must be shared with every JWT-consuming service through the
 # environment. SECRET_KEY is retained only as a local-development fallback.
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", SECRET_KEY)
+DISPLAY_NAMES_SERVICE_TOKEN = os.getenv("DISPLAY_NAMES_SERVICE_TOKEN", "")
 
 SIMPLE_JWT = {
     "SIGNING_KEY": JWT_SIGNING_KEY,

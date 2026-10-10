@@ -220,3 +220,45 @@ commands do not register automatically. Keep real secrets out of source control.
 Existing auth automatic registration makes a background attempt at startup;
 it does not have periodic retry. If Consul was unavailable or restarted, run
 `python manage.py register_consul` again after it is available.
+
+## Internal display-name lookup
+
+`POST /internal/v1/user-display-names/` supplies current lecturer identity names
+to academic-service. This is an internal read-only contract, authenticated with
+a dedicated X-Service-Token header. Ordinary user JWTs alone cannot access it.
+A missing/empty configured token denies every request. Set the same generated
+nonempty `DISPLAY_NAMES_SERVICE_TOKEN` environment value in auth and academic;
+never put it in frontend variables, repository files or client responses. Use
+private networking/TLS for this service credential outside local development.
+Existing login, refresh, health and me contracts remain unchanged.
+
+Request DTO (JSON <=64 KiB):
+
+```json
+{"user_ids":["GV001","missing"]}
+```
+
+Response DTO:
+
+```json
+{"names":{"GV001":"Nguyen An","missing":null}}
+```
+
+Only user_ids is accepted, with at most 100 nonblank string entries of at most
+255 characters; duplicates are removed and empty arrays are valid. Auth queries
+only Users and selects UserId, LastName and FirstName, joining trimmed LastName
+then FirstName with a space. Missing users or empty name parts yield null.
+No password, phone, email or other profile fields are returned. No schema change
+or public arbitrary-user profile endpoint is introduced. The gateway may route
+the path through its existing auth prefix, but service-token authentication is
+always required; do not distribute the token to end users.
+
+Statuses: 200 lookup; 400 invalid input/body; 403 missing/invalid service token;
+415 unsupported content type; 429 quota exceeded; 503 identity storage unavailable.
+The endpoint uses a shared academic-service quota of 120 requests/minute through
+Django's configured cache; the default local-memory cache limits each process
+independently. Caller timeout is bounded by academic's AUTH_NAMES_TIMEOUT_SECONDS,
+2 seconds per call by default, and callers do not retry automatically. Academic
+uses nullable name fallback on dependency failures. No external services are
+called by this endpoint. Run `python manage.py check` and `python manage.py test`
+for contract, permission, size-limit, quota and safe-error coverage.

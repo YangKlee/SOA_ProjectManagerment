@@ -1,36 +1,36 @@
-﻿# Task: Use Vite proxy for local API requests
+# Task: Revise dashboard menus by role
+
+Status: Completed after user approval (`ok`).
 
 ## Objective
-Use same-origin Axios base URL `/` and Vite development proxy to the existing API Gateway at http://localhost:8000, as newly selected by the user.
-
-## Status
-Completed after user approval (`ok`). Vite proxy, same-origin Axios base and local `.env` are configured. CORS additions selectively reverted, preserving discovery; integration.py was already restored when work resumed and was left untouched. Gateway local image rebuilt from restored source; running container unchanged. All 65 frontend tests, lint/build, 9 Gateway tests and Compose validation passed. The existing Vite server serves the updated same-origin API configuration. No real account login tested.
+Replace the dashboard business menus with the exact role structure requested by the user.
 
 ## Scope
-- Selectively undo only Gateway CORS changes introduced by this agent: origin parsing/maps/preflight/headers, Compose CORS variable, example environment CORS entries and added CORS tests. Preserve pre-existing discovery, routes, tests and all other user edits, even if changes have since been committed.
-- Restore local soa-api-gateway:local to non-CORS source. Since Docker cannot tag the old container image ID directly, rebuild restored source for the local image tag; do not restart/recreate containers or remove images.
-- Configure Vite development proxy for existing Gateway prefixes `/auth`, `/academic`, `/registrations`, `/topics`; preserve method, URL, body and Authorization.
-- Default Axios API base to `/`; update only VITE_API_BASE_URL in fe/.env and fe/.env.example to `/`. Preserve all unrelated environment entries.
-- Add optional public VITE_API_PROXY_TARGET, default http://localhost:8000, for the development proxy target.
-- Add automated proxy integration tests using ephemeral local mock Gateway and Vite server; keep login/role tests passing.
-- Update frontend README and root README frontend section with local request flow, required Vite restart and production configuration.
+- Role 1: HỌC VỤ -> Quản lý khoa, Quản lý ngành, Quản lý sinh viên, Quản lý giảng viên; ĐỀ TÀI -> Quản lý đề tài, Quản lý đăng ký.
+- Role 2: ĐỀ TÀI -> Quản lý đề tài.
+- Role 3: standalone Đăng ký đề tài item, without an extra group heading.
+- Remove former personal/messages/student academic/mentoring business entries from the sidebar.
+- Preserve shared Tổng quan, profile identity, Đăng xuất and header account/notification controls.
+- Adapt quick access cards and profile buttons to the new menus; profile actions must select an explicit profile item independently of the first business-menu entry.
+- Update automated tests and frontend README.
 
 ## Constraints
-- Until revised approval, write only fe/.agents/task.md and fe/.agents/plan.md.
-- No wildcard CORS/browser security bypass, no direct backend-service requests, no port/Gateway-prefix changes.
-- No Django/database/migration/dependency/lockfile/CI changes. Gateway writes are limited to reverting this agent's interrupted CORS changes.
-- No real credentials or live login calls. Preserve existing/concurrent user changes and commits.
+- Before approval, write only .agents/task.md and .agents/plan.md.
+- Preserve previous layout/styles, protected routes and authentication contracts.
+- No dependency, configuration, infrastructure, database or backend changes.
+- UI menu changes only; unavailable business pages remain explicit placeholders.
+- Preserve all existing and concurrent changes outside this task.
 
 ## Acceptance criteria
-- Browser requests use its frontend origin, e.g. http://localhost:5173/auth/login/; Vite forwards to Gateway :8000/auth/login/.
-- Tests verify proxy path/method/body/Bearer forwarding and that frontend routes remain SPA routes.
-- Axios base URL is `/` unless explicitly overridden. Local .env uses `/`.
-- Lint, full frontend tests, TypeScript/build and Gateway discovery regression tests pass.
-- No live Gateway restart; source remains at its prior non-CORS behavior after selective rollback.
+- Each role displays only its requested business entries, with the requested group structure.
+- Role 1 groups collapse independently; role 3 has a directly selectable registration item.
+- Quick access cards match the current role; profile actions still open Thông tin cá nhân, not faculty/topic/registration screens.
+- Menu selection/active states, mobile drawer, logout and protected routes continue working.
+- Automated tests cover full role menus and absence of removed/unauthorized entries.
+- npm run lint, npm run test, npm run build and scoped diff checks pass.
 
 ## Assumptions and risks
-- Vite proxy fixes local development. Production must proxy API prefixes on the same origin or configure server CORS for an explicit cross-origin API URL.
-- Gateway/Consul/upstream availability still determines actual login success.
-- Vite must restart to load config/environment changes. Do not stop a user-owned frontend process without identifying it; report restart if necessary.
-- No connected browser was available previously; automated local HTTP integration can verify proxying but not real-account login.
-- The repository may have committed changes during interruption; never use git reset/revert to undo unrelated work.
+- Tổng quan and Đăng xuất remain shared utility controls, outside the requested business menu list.
+- Account/profile remain accessible from the header and welcome action, without a personal sidebar group.
+- Current MainLayout assumes the first menu item is profile; this dependency must be removed to prevent incorrect navigation after restructuring.
+- Current tests depend on removed student menu entries and require intentional updates.

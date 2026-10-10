@@ -18,8 +18,10 @@ from django.contrib import admin
 from django.urls import include, path
 
 from .health import health
+from LectureManager.display_names import TopicDisplayNamesView
 
 urlpatterns = [
+    path("api/v1/topic-display-names/", TopicDisplayNamesView.as_view(), name="topic-display-names"),
     path("health/", health, name="health"),
     path('admin/', admin.site.urls),
     path('api/', include('DeparmentManager.urls')),

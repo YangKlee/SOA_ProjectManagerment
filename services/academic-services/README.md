@@ -33,7 +33,7 @@ Send an access token issued by `auth-service` with every request:
 Authorization: Bearer <access-token>
 ```
 
-All authenticated roles may use `GET`. `POST`, `PUT`, `PATCH`, and `DELETE`
+For CRUD endpoints, all authenticated roles may use `GET`. `POST`, `PUT`, `PATCH`, and `DELETE`
 require the JWT claim `role` to equal the integer `1`.
 
 | Situation | Status |
@@ -196,3 +196,64 @@ PUTs use 1/2/4/.../30-second backoff, with a 3-second default request timeout.
 Successful registrations are refreshed every 30 seconds, recovering from a
 registry restart. Set `CONSUL_AUTO_REGISTER=false` (the default) for standalone
 commands/development without Consul. No auth-service source imports are used.
+
+## Topic display-name lookup
+
+`POST /api/v1/topic-display-names/` (gateway
+`/academic/api/v1/topic-display-names/`) is a read-only batch lookup. All valid
+JWT-authenticated readers may call it, including students; it does not apply
+CRUD write-role restrictions. The caller JWT is validated locally.
+
+Request and response:
+
+```json
+{"major_ids":["1"],"advisor_ids":["GV001"]}
+```
+
+```json
+{"major_names":{"1":"Information Technology"},"advisor_names":{"GV001":"Nguyen An"}}
+```
+
+Both arrays are required and may be empty. Each accepts at most 100 entries,
+each a nonblank string <=255 characters; duplicates are removed. The request
+must be JSON <=64 KiB, with no unknown fields. ID keys are included even for
+missing records, with null values. The batch major lookup accepts TEXT IDs,
+including nonnumeric IDs; the existing numeric CRUD detail route is unchanged.
+Academic queries only owned Majors/Lecturers and only asks auth about lecturer
+IDs that exist in Lecturers, never arbitrary caller-selected user identities.
+
+Configure these environment values (loaded from the service .env, process wins):
+
+```dotenv
+# Must match auth-service; use a generated secret, never commit a real value.
+DISPLAY_NAMES_SERVICE_TOKEN=
+AUTH_NAMES_DISCOVERY_ENABLED=true
+AUTH_NAMES_TIMEOUT_SECONDS=2
+# Local development only when discovery is explicitly disabled:
+AUTH_NAMES_BASE_URL=http://localhost:8001
+```
+
+A nonempty matching token in auth and academic is required for lecturer names.
+The service resolves healthy auth-service instances through existing CONSUL_*
+settings by default. There is no static fallback. With discovery disabled, the
+explicit AUTH_NAMES_BASE_URL is used. The token is sent only as X-Service-Token
+to auth's `/internal/v1/user-display-names/`; neither the caller JWT nor Consul
+ACL token is sent to that endpoint. Secrets and names are excluded from logs.
+
+Each batch performs at most one discovery GET and one read-only auth POST, with
+no retries. AUTH_NAMES_TIMEOUT_SECONDS is finite, >0, <=10 (default 2 seconds
+per call); responses are limited to 256 KiB and redirects are rejected. No auth
+calls are made when there are no existing advisors. A process-local circuit
+opens after three failures for ten seconds. An unavailable/misconfigured auth
+lookup, timeout, malformed response or upstream HTTP error retains major names
+and returns null advisor names. Full names join trimmed LastName then FirstName;
+no available name yields null. Names describe current identities, not snapshots.
+
+Statuses: 200 lookup completed (possibly null names); 400 invalid DTO/body;
+401 invalid/missing JWT; 415 unsupported content type; 429 rate limit; 503 local
+academic storage unavailable. The endpoint has a 120 requests/minute per-user
+throttle using Django's configured cache (default local-memory cache is per
+process). Auth applies a shared 120/minute service quota. Topic handles these
+lookup failures with null-name fallback. No database schema or ownership changes.
+Run `python manage.py check` and `python manage.py test`; lookup tests mock HTTP
+and ORM boundaries and do not need running auth/Consul.

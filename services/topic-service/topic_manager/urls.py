@@ -1,3 +1,9 @@
 from django.urls import path
 from .views import HealthView, TopicDetailView, TopicListCreateView
-urlpatterns=[path('health/',HealthView.as_view()),path('api/topics/',TopicListCreateView.as_view()),path('api/topics/<str:pk>/',TopicDetailView.as_view())]
+
+urlpatterns = [path("health/", HealthView.as_view(), name="health")]
+for prefix, name in [("api/", "topic"), ("api/v1/", "topic-v1")]:
+    urlpatterns += [
+        path(prefix + "topics/", TopicListCreateView.as_view(), name=name + "-list"),
+        path(prefix + "topics/<str:pk>/", TopicDetailView.as_view(), name=name + "-detail"),
+    ]

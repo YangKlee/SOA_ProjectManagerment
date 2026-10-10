@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 import os
+import math
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -134,6 +135,15 @@ STATIC_URL = 'static/'
 # Configure the same environment value as auth-service in every deployment.
 # SECRET_KEY is retained only as a local-development fallback.
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", SECRET_KEY)
+
+IDENTITY_NAMES_CLIENT = {
+    "DISCOVERY_ENABLED": os.getenv("AUTH_NAMES_DISCOVERY_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+    "BASE_URL": os.getenv("AUTH_NAMES_BASE_URL", "http://localhost:8001"),
+    "TIMEOUT_SECONDS": float(os.getenv("AUTH_NAMES_TIMEOUT_SECONDS", "2")),
+    "SERVICE_TOKEN": os.getenv("DISPLAY_NAMES_SERVICE_TOKEN", ""),
+}
+if not math.isfinite(IDENTITY_NAMES_CLIENT["TIMEOUT_SECONDS"]) or not 0 < IDENTITY_NAMES_CLIENT["TIMEOUT_SECONDS"] <= 10:
+    raise ValueError("AUTH_NAMES_TIMEOUT_SECONDS must be finite and between 0 and 10 seconds.")
 
 SIMPLE_JWT = {
     "SIGNING_KEY": JWT_SIGNING_KEY,

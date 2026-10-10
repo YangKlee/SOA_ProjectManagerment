@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 import os
+import math
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -130,6 +131,16 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': ['topic_manager.authentication.TopicJWTAuthentication'],
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
 }
+
+ACADEMIC_CLIENT = {
+    "DISCOVERY_ENABLED": os.getenv("ACADEMIC_DISCOVERY_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+    "BASE_URL": os.getenv("ACADEMIC_BASE_URL", "http://localhost:8002"),
+    "TIMEOUT_SECONDS": float(os.getenv("ACADEMIC_TIMEOUT_SECONDS", "2")),
+    "FAILURE_THRESHOLD": 3,
+    "COOLDOWN_SECONDS": 10,
+}
+if not math.isfinite(ACADEMIC_CLIENT["TIMEOUT_SECONDS"]) or not 0 < ACADEMIC_CLIENT["TIMEOUT_SECONDS"] <= 10:
+    raise ValueError("ACADEMIC_TIMEOUT_SECONDS must be finite and between 0 and 10 seconds.")
 
 
 # Email
