@@ -196,3 +196,132 @@ Re-run Department tests as part of the full suite. No inter-service client is
 changed. No README change is needed because deployed architecture, URLs, DTOs
 and configuration are preserved. Roll back only these task-specific source/test
 edits; no database restore or migration is required. Approval pending.
+
+# Current plan: Docker Desktop and gateway startup (2026-10-10)
+
+1. After approval, launch the existing Docker Desktop executable with
+   Start-Process -WindowStyle Hidden; do not start containers before approval.
+2. Poll docker info with short bounded waits, providing progress updates. If
+   startup fails, inspect local diagnostics read-only; do not reset/install.
+3. From api-gateway, validate docker compose config, then docker compose up -d
+   using the current desktop-linux context and existing configuration.
+4. Verify docker compose ps, container logs and docker compose exec -T
+   api-gateway nginx -t. Probe local port 8000/auth/health/ if auth is running;
+   report upstream unavailability separately from Docker engine startup.
+
+## Expected writes and verification
+Only .agents/task.md and .agents/plan.md are repository changes. Docker Desktop
+may update its runtime state; Compose may fetch the existing image and create/
+start the gateway container/network. No code changes, so no new automated tests
+are needed; use runtime checks above.
+
+## Rollback
+Stop only the gateway started by this task if requested; do not remove volumes
+or affect unrelated containers. Leave existing Docker data/configuration intact.
+Do not shut down Docker Desktop automatically if other workloads are running.
+
+# Current plan: Remove password hash verification from login (2026-10-10)
+
+1. After explicit approval, replace check_password in authentication/views.py
+   with hmac.compare_digest on supplied/stored password UTF-8 bytes. Preserve
+   user lookup, error response and JWT issuance; no secret logging.
+2. Expand authentication/tests.py using mocked Users lookups to verify login
+   via accepted identifiers, exact password comparison (including whitespace/
+   Unicode), wrong password, missing user, invalid fields, safe response DTOs,
+   signed JWT claims, token refresh and authenticated profile behavior.
+3. Update root README.md and services/auth-service/README.md to document
+   plaintext comparison, unchanged JWT requirements and the production risk.
+4. Run auth-service venv python manage.py check and python manage.py test.
+   Review diff scope and confirm no database/configuration changes.
+
+## Expected changed files
+- .agents/task.md, .agents/plan.md
+- services/auth-service/authentication/views.py
+- services/auth-service/authentication/tests.py
+- services/auth-service/README.md
+- README.md
+
+## Verification and rollback
+Only mocked accounts are used in tests. Keep existing Consul tests passing.
+No live login calls are needed before approval or for verification. Rollback
+only this task's view/test/documentation edits to restore check_password; no
+DB rollback is needed because no stored values are modified.
+
+# Current plan: Per-service .env loading (2026-10-10)
+
+1. After explicit approval, verify a compatible python-dotenv release using
+   official package metadata. Add a pinned version to the two requirements.txt
+   files and install only in the corresponding existing venvs.
+2. In both config/settings.py files, import load_dotenv and call
+   load_dotenv(BASE_DIR / '.env', override=False) immediately after BASE_DIR,
+   before reading any environment-backed configuration.
+3. Add config/tests.py in each service using temporary settings/.env fixtures
+   and isolated subprocess environments. Cover quoted JWT values, different
+   working directories, environment precedence, missing file and auth Consul
+   parsing. Use dummy secrets and never overwrite actual .env files.
+4. Update root README, auth README and academic README with .env locations,
+   environment precedence, installation/restart instructions and shared JWT key
+   requirement. Do not put real secrets into documentation.
+5. Run focused settings tests then both service manage.py check and manage.py
+   test using their venvs. Set CONSUL_AUTO_REGISTER=false only in verification
+   child processes. Verify resulting keys agree without printing secret values
+   if actual .env files exist; do not restart servers automatically.
+6. Review CI: current matrix installs each service requirements and runs full
+   checks/tests, so no workflow change is expected unless commands must change.
+
+## Expected files to change
+- .agents/task.md, .agents/plan.md
+- services/{auth-service,academic-services}/requirements.txt
+- services/{auth-service,academic-services}/config/settings.py
+- services/{auth-service,academic-services}/config/tests.py (new)
+- services/{auth-service,academic-services}/README.md
+- README.md
+
+## Verification and rollback
+No real DB writes, containers or live API requests are needed. Runtime Consul
+registration is disabled in verification processes. Roll back only task-specific
+settings/test/dependency/documentation edits; remove the added package from these
+venvs if requested, without disturbing existing dependencies. No schema rollback.
+Approval pending.
+
+# Current plan: Implement LectureManager (2026-10-10)
+
+1. After explicit approval, create LectureManager/__init__.py and apps.py;
+   register LectureManager in academic config/settings.py.
+2. Add unmanaged Lecturer model with explicit Lecturers mapping, string PK and
+   nullable Department ForeignKey. Do not create a Users model/relation or any
+   migration. Preserve database constraints and DO_NOTHING deletion behavior.
+3. Add explicit request/response DTO serializers with lecturer_id (nonblank,
+   string) and optional nullable department_id. Responses exclude identity data.
+4. Add services.py with list/get/create/update/delete, academic Department
+   existence validation and primary-key immutability. Wrap writes in transactions
+   and translate IntegrityError to business validation exceptions; never expose
+   raw schema/SQL. No direct auth or Topics access.
+5. Add explicit views.py calling services, with existing ReadOnlyOrRoleOneWrite
+   and default AcademicJWTAuthentication. Map service validation to 400 and
+   missing Lecturer to 404. Add urls.py using lecturers and string detail IDs;
+   include under existing /api/ in config/urls.py.
+6. Add LectureManager/tests.py for mapping, DTOs, CRUD, parent validation,
+   duplicate/integrity failures, unchanged vs changed PK, delete constraints,
+   service delegation, missing resources, JWT failure and role policy. Use mocks
+   and/or isolated temporary/in-memory storage; never write the shared DB.
+7. Update root and academic READMEs with ownership, endpoint table, example JSON,
+   JWT role requirements, error expectations and identity-validation limitation.
+8. Run focused LectureManager tests, academic manage.py check and full manage.py
+   test with existing venv. Review diff; current CI auto-discovers tests and
+   installs unchanged dependencies, so no workflow edit is expected.
+
+## Expected changed files
+- .agents/task.md and .agents/plan.md
+- services/academic-services/LectureManager/{__init__.py,apps.py,models.py,
+  serializers.py,services.py,views.py,urls.py,tests.py}
+- services/academic-services/config/{settings.py,urls.py}
+- services/academic-services/README.md and README.md
+
+## Verification and rollback
+Assert SQL mapping/column metadata, all HTTP methods and supported JSON fields,
+string ID routing, local JWT auth, role authorization and safe validation/errors.
+No new cross-service client requires failure/retry tests. No live requests or
+Consul registration are needed for verification. Roll back only LectureManager
+files and its settings/URL/documentation additions, preserving earlier edits;
+no database restore/migration rollback. Approval pending.

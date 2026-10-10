@@ -257,3 +257,133 @@ pre-existing integer URL converters despite string model IDs; route correction
 is outside scope. Tests use mocks/isolated storage, never the shared project DB.
 Moving validation can alter error behavior; preserve field keys/messages and
 check safe 400/404 responses. No new external-service contracts are introduced.
+
+# Current task: Restore local Docker engine and start API Gateway (2026-10-10)
+
+## Objective and scope
+Resolve docker compose up -d failing because Docker Desktop Linux Engine's
+named pipe is unavailable, then start the existing API Gateway container.
+Read-only inspection found desktop-linux selected, Docker CLI installed,
+Docker Desktop executable present, no Docker Desktop/backend processes, and
+com.docker.service stopped. Existing Compose uses nginx:1.27-alpine, port 8000.
+
+## Constraints and acceptance criteria
+Do not edit Compose, nginx configuration, service ports, source, dependencies,
+database or migrations. Do not reset Docker, delete volumes/images/containers
+or change engine mode/context without a revised plan. After approval, launch
+Docker Desktop and use the existing Linux engine/context. Success: docker info
+can reach the server, docker compose up -d succeeds, the gateway is running and
+its nginx configuration passes nginx -t. Backend availability is verified only
+if the corresponding Django processes are running.
+
+## Assumptions and risks
+Docker Desktop is stopped rather than broken. Starting it can resume existing
+containers and consume local resources. Compose may download the configured
+image. A WSL/virtualization or privilege error would require additional diagnosis
+and possibly a revised approved plan. Existing port 8000 conflicts must be
+reported, not resolved by terminating unrelated processes. Approval pending.
+
+# Current task: Plaintext password comparison for login (2026-10-10)
+
+## Objective and scope
+At the user's explicit request, replace Django check_password in auth-service
+login with direct comparison against the existing Users.Password value.
+Use constant-time comparison of UTF-8 bytes; do not hash the supplied password.
+This changes password verification only, not JWT signing or validation.
+
+## Constraints
+No database writes, password conversion, schema change, migrations, package
+installation, infrastructure or other-service changes. Preserve existing login
+DTOs, routes, token claims, refresh and profile behavior. Never log or return
+passwords. Only repository planning files may change until approval.
+
+## Acceptance criteria
+An existing plaintext password authenticates when supplied exactly; wrong
+password and unknown user retain the same safe 401 response. Missing/invalid
+fields return 400. Successful login still issues usable signed access/refresh
+JWTs and excludes passwords from its response. Tests cover identifier/email/
+userid login, invalid credentials, DTO errors and token/profile behavior.
+Run auth-service manage.py check and full tests; document the verification
+policy in the root and auth-service READMEs.
+
+## Assumptions and risks
+The user wants plaintext comparison for the project, not a hash migration or a
+fallback mode. Plaintext storage exposes passwords to anyone who reads the DB;
+it is unsuitable for production. Existing hashed rows will no longer accept
+original plaintext passwords with this policy; no rows will be changed or
+converted. JWT hashing/signing configuration remains unchanged. Tests use fake
+users and mocked ORM, never the shared project DB. Approval pending.
+
+# Current task: Load local .env in auth and academic services (2026-10-10)
+
+## Objective and scope
+Automatically load services/auth-service/.env and
+services/academic-services/.env during settings initialization, before reading
+JWT_SIGNING_KEY and Consul options. The same JWT key in both files must be used
+without manual PowerShell environment assignment. Scope is these two services.
+
+## Constraints
+Use python-dotenv with an explicit BASE_DIR / '.env' path and override=False:
+existing process environment wins over file values. Missing .env is allowed
+for CI/deployment. Preserve all API routes, JWT validation, authorization and
+password policy. Do not edit/read out real secret values or commit .env files.
+No database, migration, infrastructure or unrelated-service changes.
+
+## Acceptance criteria
+Each service loads only its own .env, independent of working directory.
+Quoted values are parsed correctly, environment overrides remain intact, absent
+files do not prevent startup, and settings consume loaded JWT/Consul values.
+Add automated settings tests with temporary files/fake secrets; do not contact
+Consul or write the shared DB. Both service checks and full tests pass. Existing
+CI installs dependencies from per-service requirements without command changes.
+
+## Assumptions and risks
+Only auth-service and academic-service are requested by the current issue;
+topic and other services remain outside scope. Add python-dotenv to both
+requirements and install in their existing virtual environments after approval.
+Pin a compatible published version verified after approval. File changes need
+server restart. Stale shell JWT values override .env intentionally. Loading
+auth .env can enable existing CONSUL_AUTO_REGISTER=true on actual server startup;
+verification must disable this in test/check processes to avoid external calls.
+
+# Current task: LectureManager lecturer CRUD app (2026-10-10)
+
+## Objective and scope
+Create the user-named LectureManager Django app inside academic-services using
+URL -> explicit view -> application service -> database-first model, matching
+the existing manager pattern. Resource/model terminology is Lecturer/lecturers.
+
+## Inspected schema and ownership
+Read-only sqlite metadata confirms Lecturers(LecturerId TEXT primary key,
+FacultyId TEXT nullable). FacultyId references Faculties.FacultyId; LecturerId
+references auth-owned Users.UserId. Academic owns Lecturers and Faculties only.
+Map lecturer_id explicitly to LecturerId as a string primary key, department
+relation explicitly to FacultyId with nullable metadata; managed=False.
+Do not import/query Users, include identity fields or inspect private auth rows.
+
+## API scope and acceptance criteria
+Expose collection /api/lecturers/ with GET/POST and detail
+/api/lecturers/<str:pk>/ with GET/PUT/PATCH/DELETE; gateway URLs prepend /academic.
+Use request/response DTOs with lecturer_id and optional nullable department_id.
+JWT required for every endpoint; all authenticated roles may read, writes
+require role 1. Preserve existing services/routes and shared JWT configuration.
+Services own CRUD and parent validation, views own DTO/HTTP translation.
+Return 200/201/204 success, field-based 400 validation/integrity errors, 404
+missing records, 401 invalid/missing/expired tokens, 403 unauthorized writes,
+and 405 unsupported methods (including detail POST). Reject duplicate lecturer
+IDs; lecturer_id is immutable on update (same value allowed, changed value 400).
+No accidental creation from a changed primary key. Use safe messages for missing
+referenced user / constraints without exposing raw database errors.
+
+## Constraints, assumptions and risks
+No schema change, production DB writes, migrations, packages, containers, CI
+command changes or new deployed service. No changes to other managers. Existing
+Users FK stays enforced by SQLite; no reusable service-authenticated identity
+lookup contract is introduced. Caller supplies an existing user ID; the new app
+does not independently validate identity via REST, an explicitly documented
+limitation rather than cross-service ORM access. Do not infer lecturer identity
+or role from a client-supplied ID. Existing foreign key dependencies can block
+delete; handle safely with 400 rather than cascading or raw 500. SQLite concurrent
+writes can contend; this task adds no retries/schema changes. No backup/DB
+rollback is needed because the task never modifies the shared DB. Leave existing
+unrelated working-tree changes (frontend, auth, etc.) untouched. Approval pending.
