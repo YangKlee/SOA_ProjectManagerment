@@ -429,3 +429,27 @@ class TopicNameClientTests(SimpleTestCase):
                                             "avisor_name", "created_at", "updated_at", "updated_by"})
         self.assertEqual(response[0]["avisor_name"], "Nguyen An")
         self.assertEqual(len(response), 200)
+
+    @patch.object(clients.academic_names_client, "display_names", return_value={
+        "major_names": {"1": "IT"}, "advisor_names": {"GV1": None}})
+    def test_identity_fallback_retains_real_major_without_fabricating_advisor(self, names):
+        obj = SimpleNamespace(topic_id="T", name="SOA", description=None, file_url=None,
+                              major_id="1", advisor_id="GV1", status=1,
+                              created_at=None, updated_at=None, updated_by=None)
+        response = topic_response(obj, "Bearer t")
+        self.assertEqual(response["major_name"], "IT")
+        self.assertIsNone(response["avisor_name"])
+        self.assertNotIn("advisor_id", response)
+
+    @patch.object(clients.academic_names_client, "display_names", side_effect=[
+        clients.DependencyUnavailable(), {"major_names": {"1": "IT"}, "advisor_names": {"GV1": "Nguyen An"}}])
+    def test_enrichment_recovers_on_next_lookup_after_dependency_recovers(self, names):
+        obj = SimpleNamespace(topic_id="T", name="SOA", description=None, file_url=None,
+                              major_id="1", advisor_id="GV1", status=1,
+                              created_at=None, updated_at=None, updated_by=None)
+        failed = topic_response(obj, "Bearer t")
+        self.assertIsNone(failed["major_name"])
+        self.assertIsNone(failed["avisor_name"])
+        recovered = topic_response(obj, "Bearer t")
+        self.assertEqual(recovered["major_name"], "IT")
+        self.assertEqual(recovered["avisor_name"], "Nguyen An")

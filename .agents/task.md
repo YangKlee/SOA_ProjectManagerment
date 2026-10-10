@@ -1,22 +1,34 @@
-# Task: Fix topic-service academic validation unavailable
+# Task: Restore topic major/advisor display names
 
-Status: Complete after explicit user approval `ok`.
+Status: Complete after initial and expanded user approvals `ok`.
 
-## Objective and evidence
-Resolve screenshot response Academic validation is temporarily unavailable while creating a topic. The user's latest evidence supersedes the earlier JWT rejection. A fresh secret-safe local comparison now shows auth, academic and topic JWT_SIGNING_KEY values agree; do not overwrite these keys.
+## Objective and read-only findings
+Fix topic responses returning major_name:null and avisor_name:null for existing named academic references. Topic obtains both names through academic's read-only batch endpoint; academic obtains lecturer user names through auth's service-authenticated internal batch endpoint. Academic still has AUTH_NAMES_DISCOVERY_ENABLED=true, while auth advertises host.docker.internal. Earlier runtime evidence established this hostname was unreachable from local Windows Django callers. Topic's academic client is already explicitly loopback following the previous approved fix. JWT keys and INTERNAL_SERVICE_TOKEN match in local config (boolean-only verification).
 
-Topic client forwards the caller JWT to academic /api/majors/{id}/ and /api/lecturers/{id}/; route contracts match the current code. It returns this generic 503 for discovery/transport failures, academic 401/403/5xx and invalid DTOs, not only a stopped service. Current topic .env enables ACADEMIC_DISCOVERY_ENABLED=true and uses Consul localhost:8500; academic advertises host.docker.internal:8002. Windows academic listener is active on 0.0.0.0:8002. The registered Docker hostname is a suspected reachability mismatch, consistent with an earlier local identity-client issue, but current registry payload/runtime HTTP status have not been probed because approval is still pending.
+Both outer topic-to-academic and inner academic-to-auth timeouts currently default to 2 seconds. If inner discovery/auth lookup stalls, the outer call can time out first and discard both name maps, even when the major exists. This explains a possible path to both null values; current runtime batch responses and referenced row existence still need verification after approval.
 
-## Proposed scope
-After approval, first make bounded read-only runtime probes to distinguish discovery, address reachability, JWT rejection and DTO failures. If discovery returns an academic address unreachable from this Windows topic process while localhost academic succeeds, configure topic-service local .env ACADEMIC_DISCOVERY_ENABLED=false and ACADEMIC_BASE_URL=http://127.0.0.1:8002. This is explicit local-development config only; preserve Consul/Gateway registrations and code defaults. Preserve JWT_SIGNING_KEY, INTERNAL_SERVICE_TOKEN and all unrelated settings. Do not silently disable discovery in production code.
+## Scope
+- After approval, diagnose with bounded read-only batch calls: topic-owned references, academic batch response and auth internal names, comparing discovered versus local auth endpoint. Do not print tokens, personal names or secret values; output statuses and availability booleans.
+- If confirmed Windows discovery reachability failure, change only academic local .env AUTH_NAMES_DISCOVERY_ENABLED=false and AUTH_NAMES_BASE_URL=http://127.0.0.1:8001. Preserve identity-management client settings, JWT/internal keys, topic's academic config and registry/Gateway defaults.
+- Restart only verified academic runserver instance on 8002 with original bind/executable/cwd. Restart verified topic instance on 8004 if necessary to clear its existing display-name circuit after recovery. Preserve original bind addresses; hidden windows.
+- Add academic display-client/config regression tests and topic response/fallback tests where needed. Update affected READMEs/root troubleshooting. Keep current JSON avisor_name spelling and null behavior for genuinely missing references/names.
+- Verify both services' Django checks/tests and runtime topic name enrichment on existing records without creating/updating any data.
 
-Restart only the verified local topic-service runserver on 8004 with its current executable, bind address and directory, hidden. Add automated configuration/client regression coverage and docs for this Windows development scenario. Verify topic checks/full tests and read-only runtime reference validation. No production topic/account writes.
+## Constraints and acceptance criteria
+No auth source/env changes, no frontend changes, no DB/schema/migrations, dependencies or infrastructure changes. No direct cross-service DB/ORM access: topic reads only Topics and relation IDs; academic/auth details obtained via their published REST lookup contracts. No real account/topic writes. Successful named references must return real major/advisor names; absent names remain null, not fabricated IDs. Authorization and bounded network behavior remain intact. Automated tests/checks pass.
 
-## Constraints
-No auth/academic/other service changes, no database/schema/migrations, dependency changes, frontend changes or infrastructure edits. No authentication bypass; public JWT and internal service credentials remain separate. No secret/JWT output or committed real .env. Preserve ongoing frontend work. If runtime evidence requires a materially different fix, update plan and obtain approval before it.
+## Assumptions and risks
+Latest evidence indicates a second Docker-hostname/local-process mismatch, now academic-to-auth. Runtime confirmation is required before changing config. Brief academic/topic downtime for verified restarts. Some rows may genuinely lack corresponding identities or stored names; report those without modifying data. Equal outer/inner per-call budgets remain a deployment tuning consideration; do not hide outages by inventing names or bypassing security. Materially different code/API changes need a revised plan.
 
-## Acceptance criteria
-Identify actual upstream/discovery failure safely. Valid academic major/lecturer references can be checked from topic runtime using bounded REST requests, while nonexistent references remain 400 and invalid JWTs remain rejected. Existing tests/checks pass. No real topic writes needed to verify dependency validation; do not claim user's POST was retried or successful.
+## Runtime findings after approval
+- Topic-owned read-only sample contains one topic with major/advisor references. No data was printed or changed.
+- Healthy discovered auth address is host.docker.internal:8001 and fails from Windows with URLError after about 2 seconds.
+- Local auth internal name lookup returns 403 with current nonempty INTERNAL_SERVICE_TOKEN from auth, academic and topic local configs; the three configured values match. Even an empty read-only lookup is rejected before any data access. This is a second blocker beyond discovery; running auth credentials appear inconsistent with current file configuration.
+- Academic batch completes after about 4 seconds with the major name present and advisor name null. Current topic GET also has major name present and advisor name null. The equal outer/inner timeouts explain why earlier results can lose both names.
+- Auth listener on 8001 belongs to a verified local auth-service runserver tree. Existing scope explicitly excluded auth restarts; no service has been restarted and no environment/source file changed during this task yet.
 
-## Risks
-Brief topic interruption during restart. Current .env and running process configuration can differ. Static loopback is appropriate only for services on this Windows host; container deployments must keep reachable discovery addresses. Optional display-name dependencies may fail independently of required validation. Topic creation may reveal another issue after validation recovers; handle it separately without bypassing ownership or constraints.
+## Proposed additional scope requiring approval
+Permit restarting only the verified auth-service listener/process tree on 8001 with the current auth venv, original 0.0.0.0:8001 bind and service cwd, hidden, to reload current credentials. Do not change any JWT key, INTERNAL_SERVICE_TOKEN, auth source, auth .env or account data. Then verify local internal lookup accepts current credential and rejects wrong/missing credentials. If it succeeds, perform the already proposed academic AUTH_NAMES loopback config, academic restart, optional topic circuit reset, tests/docs and runtime verification. If restart does not reconcile credentials, stop dependent changes and report further evidence rather than bypassing auth.
+
+## Outcome
+Existing topic verified twice with both real major/advisor names populated after correcting local names transport and removing stale duplicate serving instances. All three Django checks and 218 tests passed. No database/user/topic data changed. See plan.md for runtime evidence, approved restart scope and rollback details.

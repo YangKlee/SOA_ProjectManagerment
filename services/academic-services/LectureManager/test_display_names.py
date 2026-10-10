@@ -102,6 +102,20 @@ class IdentityClientTests(SimpleTestCase):
                                       {"X-Service-Token": "service-secret"}, 2, {"user_ids": ["GV1"]})
         self.assertNotIn("Authorization", fetch.call_args.args[1])
 
+    @override_settings(IDENTITY_NAMES_CLIENT={**CONFIG, "BASE_URL": "http://127.0.0.1:8001"},
+                       CONSUL={"URL": "http://unreachable-registry.invalid:8500", "TOKEN": "registry-secret"})
+    @patch.object(identity_module, "fetch_json", return_value={"names": {"GV1": "Nguyen An"}})
+    def test_explicit_loopback_names_do_not_use_discovery_or_caller_jwt(self, fetch):
+        self.assertEqual(self.client.names(["GV1"]), {"GV1": "Nguyen An"})
+        fetch.assert_called_once_with("http://127.0.0.1:8001/internal/v1/user-display-names/",
+                                      {"X-Service-Token": "service-secret"}, 2, {"user_ids": ["GV1"]})
+
+    @override_settings(IDENTITY_NAMES_CLIENT={**CONFIG, "BASE_URL": "http://127.0.0.1:8001"})
+    @patch.object(identity_module, "fetch_json", side_effect=TimeoutError())
+    def test_loopback_outage_still_returns_null_without_retry(self, fetch):
+        self.assertEqual(self.client.names(["GV1"]), {"GV1": None})
+        self.assertEqual(fetch.call_count, 1)
+
     @override_settings(IDENTITY_NAMES_CLIENT={**CONFIG, "DISCOVERY_ENABLED": True},
                        CONSUL={"URL": "http://registry:8500", "TOKEN": "consul-secret"})
     @patch.object(identity_module, "fetch_json")

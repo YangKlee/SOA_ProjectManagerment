@@ -240,6 +240,33 @@ explicit AUTH_NAMES_BASE_URL is used. The token is sent only as X-Service-Token
 to auth's `/internal/v1/user-display-names/`; neither the caller JWT nor Consul
 ACL token is sent to that endpoint. Secrets and names are excluded from logs.
 
+For local Windows Django processes, a Docker-advertised auth address such as
+`host.docker.internal:8001` may be unreachable from academic even when Consul
+marks it healthy. Explicitly configure academic's untracked `.env`:
+
+```dotenv
+AUTH_NAMES_DISCOVERY_ENABLED=false
+AUTH_NAMES_BASE_URL=http://127.0.0.1:8001
+```
+
+These settings affect only display names. `AUTH_IDENTITY_*` controls the separate
+identity-management client; changing it does not configure name lookup. Keep
+`INTERNAL_SERVICE_TOKEN` consistent with auth and restart academic after editing
+its environment. If auth still returns 403 for the matching credential, verify
+its running configuration and restart its verified instance after any credential
+change. An older duplicate runserver may still accept connections on the same
+port: inspect the serving connection's process and service ancestry before
+stopping anything. Do not rotate keys or bypass internal authentication to
+recover display names.
+
+Topic's outer timeout must allow time for academic's nested auth lookup. If
+the inner lookup stalls until the outer timeout, topic cannot use even the major
+names from the late batch response. Timeouts bound individual calls, not the
+whole chain; fixing a wrong address avoids that delay without guaranteeing names
+during future outages. Missing identities or empty stored names legitimately
+remain null. Loopback is for services on this host; production discovery
+addresses must be reachable from each caller.
+
 Each batch performs at most one discovery GET and one read-only auth POST, with
 no retries. AUTH_NAMES_TIMEOUT_SECONDS is finite, >0, <=10 (default 2 seconds
 per call); responses are limited to 256 KiB and redirects are rejected. No auth

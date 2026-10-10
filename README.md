@@ -183,6 +183,17 @@ imply registration business APIs are implemented. Database schemas are unchanged
 
 ## Topic CRUD
 
+Topic display names use a separate topic → academic → auth batch lookup chain.
+For Windows local services, academic's name client can explicitly use
+`AUTH_NAMES_DISCOVERY_ENABLED=false` and
+`AUTH_NAMES_BASE_URL=http://127.0.0.1:8001`; this differs from its
+`AUTH_IDENTITY_*` management client. Restart academic after environment changes
+and ensure auth loaded the same internal credential. Check for older duplicate
+runservers still accepting connections if a matching credential returns 403.
+Nested lookup delays can exhaust topic's outer timeout and yield null names;
+genuinely absent identities or empty names also remain null. See the
+[academic name contract](services/academic-services/README.md#topic-display-name-lookup).
+
 If topic creation returns `Academic validation is temporarily unavailable`,
 check discovery, topic-to-academic reachability, the forwarded JWT and reference
 DTOs. When Django services run on Windows and Consul advertises a Docker-only

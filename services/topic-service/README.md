@@ -272,3 +272,18 @@ current public academic calls forward only the caller JWT. Missing/mismatched
 service credentials cause advisor names to be null. See
 [academic lookup contract](../academic-services/README.md#topic-display-name-lookup)
 and [auth internal contract](../auth-service/README.md#internal-display-name-lookup).
+
+If `major_name` and `avisor_name` unexpectedly become null, check the full
+topic → academic → auth lookup chain. Topic's `ACADEMIC_*` configuration and
+academic's `AUTH_NAMES_*` configuration are independent. In local Windows
+development academic may need `AUTH_NAMES_DISCOVERY_ENABLED=false` and
+`AUTH_NAMES_BASE_URL=http://127.0.0.1:8001`, followed by an academic restart.
+Changing only `AUTH_IDENTITY_*` does not fix the display-name client.
+Auth must also have loaded the matching internal credential; a stale duplicate
+runserver can still reject requests after another instance has restarted.
+
+An academic batch may wait on auth longer than topic's outer timeout, causing
+topic to discard both names even when academic eventually resolves the major.
+Compare read-only batch responses and timing to distinguish this from genuinely
+missing identities or empty names. Names remain nullable during outages;
+recovering transport/configuration must not manufacture names from IDs.
