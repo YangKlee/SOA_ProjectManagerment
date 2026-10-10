@@ -29,8 +29,9 @@ to `/admin`, role 2 to `/lecture`, and role 3 to `/student`. Role routes require
 an authenticated session and support logout. Nested admin CRUD routes are
 `/admin/departments`, `/admin/majors`, `/admin/students`, and `/admin/lecturers`.
 Sidebar/shortcut links update the URL, active menu, title and breadcrumb; browser
-Back/Forward follows page history. Each role has `/profile`; existing topic and
-registration menu routes remain development placeholders (see frontend README).
+Back/Forward follows page history. Each role has `/profile` as a development placeholder. `/admin/topics` lists
+topics and provides a create popup; `/lecture/topics` provides a read-only list.
+Registration menu routes remain development placeholders (see frontend README).
 Unknown URLs display 404. Login returns to a known requested route allowed for
 the authenticated role; external or unauthorized return destinations are rejected.
 Only the access token is saved in tab-scoped sessionStorage; F5 restores a valid
@@ -181,6 +182,17 @@ and Windows/Docker networking. Regist-service's health/registration does not
 imply registration business APIs are implemented. Database schemas are unchanged.
 
 ## Topic CRUD
+
+Frontend `/admin/topics` lists topic code, name, advisor name and major name,
+with explicit Search by code/name and a create popup. `/lecture/topics` lists
+and searches only. The popup includes name, description, lecturer and major
+selects; major is required by the existing API. GUIDs are generated once per
+draft using `crypto.randomUUID()` (HTTPS/localhost). Named lecturers and majors
+come through existing academic Gateway endpoints. Ambiguous create failures
+require a result check by GUID before manual resubmission; no automatic POST
+retry. See [frontend topic workflow](fe/README.md#danh-sách-và-tạo-đề-tài).
+Frontend edit/delete workflows remain unimplemented. Live account integration
+has not been verified; backend CRUD remains unchanged.
 
 Topic CRUD supports GET/POST on `/topics/api/v1/topics/` and
 GET/PUT/PATCH/DELETE on `/topics/api/v1/topics/{id}/` through the gateway.

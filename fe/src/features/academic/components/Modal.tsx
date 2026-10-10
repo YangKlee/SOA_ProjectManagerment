@@ -14,7 +14,7 @@ export function Modal({ title, busy, onClose, children }: { title: string; busy:
     const previousInert = siblings.map((node) => node.hasAttribute('inert'))
     siblings.forEach((node) => node.setAttribute('inert', ''))
     document.body.style.overflow = 'hidden'
-    const firstInput = dialog.current?.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled)')
+    const firstInput = dialog.current?.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')
     ;(firstInput ?? dialog.current)?.focus()
     return () => {
       document.body.style.overflow = previousOverflow
@@ -28,7 +28,7 @@ export function Modal({ title, busy, onClose, children }: { title: string; busy:
     <section ref={dialog} className="academic-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy} tabIndex={-1} onKeyDown={(event) => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (!busy) onClose() }
       if (event.key !== 'Tab') return
-      const controls = Array.from(dialog.current?.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>('button, input, select') ?? []).filter((control) => !control.disabled && !control.closest('fieldset:disabled'))
+      const controls = Array.from(dialog.current?.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('button, input, select, textarea') ?? []).filter((control) => !control.disabled && !control.closest('fieldset:disabled'))
       const first = controls[0], last = controls.at(-1)
       if (!first) { event.preventDefault(); dialog.current?.focus() }
       else if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus() }

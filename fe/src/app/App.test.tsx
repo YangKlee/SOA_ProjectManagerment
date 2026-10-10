@@ -311,9 +311,7 @@ describe('Login and role routes', () => {
     { role: 1, path: '/admin/profile', title: 'Thông tin cá nhân' },
     { role: 2, path: '/lecture/profile', title: 'Thông tin cá nhân' },
     { role: 3, path: '/student/profile', title: 'Thông tin cá nhân' },
-    { role: 1, path: '/admin/topics', title: 'Quản lý đề tài' },
     { role: 1, path: '/admin/registrations', title: 'Quản lý đăng ký' },
-    { role: 2, path: '/lecture/topics', title: 'Quản lý đề tài' },
     { role: 3, path: '/student/registrations', title: 'Đăng ký đề tài' },
   ])('opens the existing placeholder at $path', async ({ role, path, title }) => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
@@ -364,6 +362,58 @@ describe('Login and role routes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Forward' }))
     expect(await screen.findByRole('table', { name: 'Danh sách sinh viên' })).toBeVisible()
     expect(screen.getByTestId('path').textContent).toBe('/admin/students')
+  })
+
+  it.each([
+    { role: 1, path: '/admin/topics' },
+    { role: 2, path: '/lecture/topics' },
+  ])('restores topic deep link $path with role-appropriate controls', async ({ role, path }) => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    mock.onGet('/auth/me/').reply(200, responseForRole(role).user)
+    mock.onGet('/topics/api/v1/topics/').reply(200, [{ topic_id: 'DT001', name: 'SOA', description: null, major_name: 'IT', avisor_name: 'An' }])
+    renderApp(path)
+    expect(await screen.findByRole('table', { name: 'Danh sách đề tài' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Quản lý đề tài', level: 1 })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Quản lý đề tài' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByTestId('path').textContent).toBe(path)
+    expect(screen.queryByRole('button', { name: 'Tạo đề tài' }) !== null).toBe(role === 1)
+    expect(mock.history.get.find(request => request.url === '/topics/api/v1/topics/')?.headers?.Authorization).toBe('Bearer saved-token')
+  })
+
+  it('returns to the topic route after login then follows Back/Forward navigation', async () => {
+    mock.onPost('/auth/login/').reply(200, responseForRole(1))
+    mock.onGet('/topics/api/v1/topics/').reply(200, [])
+    academicResponses()
+    renderApp('/admin/topics')
+    await screen.findByRole('heading', { name: 'Đăng nhập' })
+    fillForm(); submitForm()
+    await screen.findByRole('table', { name: 'Danh sách đề tài' })
+    expect(screen.getByTestId('path').textContent).toBe('/admin/topics')
+    fireEvent.click(screen.getByRole('link', { name: 'Quản lý khoa' }))
+    await screen.findByRole('table', { name: 'Danh sách khoa' })
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    await screen.findByRole('table', { name: 'Danh sách đề tài' })
+    expect(screen.getByRole('link', { name: 'Quản lý đề tài' })).toHaveAttribute('aria-current', 'page')
+    fireEvent.click(screen.getByRole('button', { name: 'Forward' }))
+    await screen.findByRole('table', { name: 'Danh sách khoa' })
+    expect(screen.getByTestId('path').textContent).toBe('/admin/departments')
+  })
+
+  it('blocks student access to topic management before any topic request', async () => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    mock.onGet('/auth/me/').reply(200, responseForRole(3).user)
+    renderApp('/admin/topics')
+    expect(await screen.findByRole('heading', { name: 'Sinh viên' })).toBeVisible()
+    expect(mock.history.get.map(request => request.url)).toEqual(['/auth/me/'])
+  })
+
+  it('clears the real auth session if the topic API returns 401', async () => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    mock.onGet('/auth/me/').reply(200, responseForRole(1).user)
+    mock.onGet('/topics/api/v1/topics/').reply(401)
+    renderApp('/admin/topics')
+    expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull()
   })
 
   it('aborts an academic request when navigating to another page', async () => {

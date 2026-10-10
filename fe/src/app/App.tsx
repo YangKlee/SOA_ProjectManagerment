@@ -8,6 +8,7 @@ import { DashboardHomePage } from './DashboardHomePage'
 import { DashboardPlaceholderPage } from './DashboardPlaceholderPage'
 import { AcademicRoutePage } from './AcademicRoutePage'
 import { NotFoundPage } from './NotFoundPage'
+import { TopicPage } from '../features/topics/TopicPage'
 
 export function App() {
   return (
@@ -21,7 +22,7 @@ export function App() {
           {dashboardItems(role).filter((item) => item !== HOME_ITEM).map((item) => {
             const academicId = role === 1 ? ACADEMIC_PAGE_IDS.find((id) => id === item.id) : undefined
             return <Route key={item.id} path={item.path} element={academicId
-              ? <AcademicRoutePage id={academicId} /> : <DashboardPlaceholderPage />} />
+              ? <AcademicRoutePage id={academicId} /> : item.id === 'topics' ? <TopicPage /> : <DashboardPlaceholderPage />} />
           })}
           <Route path="*" element={<NotFoundPage withinLayout />} />
         </Route>

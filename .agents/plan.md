@@ -1,29 +1,21 @@
-# Plan: URL-based frontend navigation
+﻿# Plan: Restore topic-to-academic validation in local development
 
-Status: Complete after user approval `ok`.
+Status: Awaiting explicit user approval of revised scope.
 
-1. Inspect existing route guards, session/login navigation, dashboard layout/menu and tests; preserve role roots and session behavior.
-2. Define central typed route metadata for overview, profile, four admin academic pages and existing placeholder menu entries; use consistent URLs listed in task.md.
-3. Create nested role/layout routes with Outlet in App. Extract overview and placeholder content into pages; keep MainLayout as reusable shell. Add404 routing; retain root session redirect.
-4. Replace state-driven sidebar/shortcut/account navigation with Link/NavLink. Derive active item/breadcrumb/title from URL, preserve mobile drawer focus/closing and keyboard support including anchors.
-5. Preserve authorized requested deep links through login using safe internal route validation; keep role mismatch redirects and session restoration blocking stale navigation. Avoid open redirects.
-6. Update/add router/layout/auth/academic integration tests for direct links, restored deep routes, allowed return destinations, unknown routes, Back/Forward, active menu/breadcrumb, mobile links and cancellation. Extend existing real Vite proxy deep-link tests if needed.
-7. Update frontend README and relevant root frontend documentation with route table, placeholders, login return behavior and SPA history fallback. No hosting config changes.
-8. Run npm run lint, npm run test and npm run build; review status/diff and record verification and remaining deployment limits.
+1. Confirm revised plan. Earlier UI approval did not authorize config changes, runtime probes or restarts. JWT file values now match; preserve them.
+2. Use bounded read-only probes after approval: Consul healthy academic instances, sanitized discovered addresses, academic health and legacy detail DTOs through discovered address versus 127.0.0.1:8002. Keep tokens/keys in memory and output only status/class/booleans. Inspect topic listener/process identity and original startup command safely.
+3. If evidence confirms Docker hostname unreachable from the Windows topic process and loopback academic valid, modify only ignored topic-service/.env ACADEMIC_DISCOVERY_ENABLED=false and ACADEMIC_BASE_URL=http://127.0.0.1:8002. Preserve original values in memory for rollback and verify every unrelated setting unchanged. No global Consul/Gateway changes.
+4. Add topic config/client tests with dummy values for explicit static development config, environment precedence/service-local dotenv loading and reference validation success/errors. Keep discovery default enabled and mandatory JWT/reference checks. Update topic-service README and root README troubleshooting.
+5. Run topic venv python -B manage.py check and python -B manage.py test using disposable test fixtures and mocked dependencies, no schema migrations or live DB writes.
+6. Restart only the verified topic runserver tree on 8004, hidden, with its original executable/bind/directory. If identity/startup cannot be verified, report manual restart instead of stopping unrelated processes.
+7. Verify health, read-only GET topics and academic reference DTO/validation calls with an in-memory short-lived test JWT issued using auth config. Do not log token or use real login credentials. Never POST a topic or modify accounts for verification.
+8. Record results/limitations; review diff, ensure real .env ignored and all frontend changes preserved. If a different material cause is discovered, stop dependent edits and revise the plan for approval.
 
 ## Expected files
-fe/src/app/App.tsx, RoleHomePage.tsx (refactor/replace), new dashboard/placeholder/404 pages and route metadata; fe/src/components/layout/MainLayout.tsx, dashboard-menu.ts, dashboard.css only for link styling; fe/src/features/auth/AuthRoutes.tsx and login routing helpers as needed; related App/layout/auth/proxy tests; fe/README.md, README.md, .agents/task.md and .agents/plan.md. No backend, DB, packages, lockfiles, real .env or infrastructure.
+.agents/task.md, .agents/plan.md; ignored services/topic-service/.env (two academic client keys, conditional on diagnosis); topic-service config/client regression tests; services/topic-service/README.md; root README.md. No frontend, other service env, DB, package or infrastructure changes.
 
-## Verification and rollback
-Use MemoryRouter/BrowserRouter integration tests and existing isolated Vite proxy tests; mock HTTP/session profile, never mutate real accounts. Validate navigation history and security cases, not only route metadata snapshots. Revert only this task's routing changes if needed, preserving previous CRUD/session/token/select work. Old role-root URLs remain valid throughout the change.
+## Rollback
+Restore only prior topic academic-client dotenv entries and restart the same verified topic instance; revert task-specific tests/docs only. Preserve user's JWT key correction and previous topic frontend work.
 
 ## Approval boundary
-The task and plan were presented before implementation; user `ok` approved the scope. No further scope expansion was needed.
-
-## Verification results
-- npm run lint: passed (zero warnings).
-- npm run test: 10 test files, 178 tests passed. Covers restored deep URLs, role guards, safe login return URLs/query/hash, all placeholders, 404, Back/Forward, request aborts and mobile navigation.
-- npm run build: TypeScript and Vite production build passed.
-- git diff --check: passed.
-- Real Vite server proxy test serves nested frontend routes as SPA HTML and keeps Gateway API forwarding intact. No backend/API/config/database/dependency changes; Django checks are not applicable to this frontend-only task.
-- Production hosting fallback and live backend/account behavior are not verified or changed; requirements documented in both READMEs.
+AGENTS.md Mandatory task workflow requires explicit confirmation before configuration/source/docs changes, calling external services or service restarts. Screenshot is diagnostic evidence, not explicit plan approval. Only the two permitted .agents files have been updated.
