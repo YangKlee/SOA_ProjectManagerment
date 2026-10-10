@@ -9,7 +9,7 @@ export const API_TIMEOUT_MS = 10_000
 
 let accessToken: string | null = null
 
-/** Set after login; clear on logout. Deliberately not persisted in browser storage. */
+/** In-memory request token; AuthProvider handles tab persistence and restoration. */
 export function setAccessToken(token: string | null): void {
   accessToken = token?.trim() || null
 }

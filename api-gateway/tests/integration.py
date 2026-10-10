@@ -3,6 +3,7 @@ import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import socket
 from pathlib import Path
 import subprocess
 import sys
@@ -10,7 +11,7 @@ import threading
 import time
 import unittest
 
-STATE = {"healthy": True, "registry_error": False, "port": None, "writes": []}
+STATE = {"healthy": True, "registry_error": False, "port": None, "writes": [], "address": "127.0.0.1"}
 
 
 class Backend(BaseHTTPRequestHandler):
@@ -45,7 +46,7 @@ class Registry(BaseHTTPRequestHandler):
         self.end_headers()
         name = self.path.split("/")[-1].split("?")[0]
         ports = STATE["port"] if isinstance(STATE["port"], list) else [STATE["port"]]
-        result = [{"Service": {"Service": name, "Address": "127.0.0.1", "Port": port},
+        result = [{"Service": {"Service": name, "Address": STATE["address"], "Port": port},
                    "Node": {"Address": "127.0.0.1"}, "Checks": [{"Status": "passing"}]}
                   for port in ports] if STATE["healthy"] else []
         self.wfile.write(json.dumps(result).encode())
@@ -82,6 +83,9 @@ def eventually(check, timeout=8):
 class GatewayIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # Disposable container only: reproduce a host with A and unreachable AAAA.
+        with Path("/etc/hosts").open("a") as hosts:
+            hosts.write("\n127.0.0.1 dualstack.gateway.test\nfd00::123 dualstack.gateway.test\n")
         cls.a = server(Backend)
         cls.b = server(Backend)
         cls.registry = server(Registry)
@@ -89,7 +93,8 @@ class GatewayIntegrationTests(unittest.TestCase):
         STATE["registry_error"] = True
         environment = dict(os.environ, CONSUL_URL=f"http://127.0.0.1:{cls.registry.server_port}",
                            CONSUL_REFRESH_SECONDS="0.2", CONSUL_TIMEOUT_SECONDS="0.2",
-                           CONSUL_STALE_TTL_SECONDS="1")
+                           CONSUL_STALE_TTL_SECONDS="1", GATEWAY_UPSTREAM_IP_FAMILY="ipv4",
+                           GATEWAY_DNS_TIMEOUT_SECONDS="1")
         cls.worker = subprocess.Popen(["/opt/gateway/entrypoint.sh"], env=environment,
                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         eventually(lambda: request("/health/")[0] == 200)
@@ -107,7 +112,7 @@ class GatewayIntegrationTests(unittest.TestCase):
             item.server_close()
 
     def setUp(self):
-        STATE.update(healthy=True, registry_error=False, port=self.a.server_port, writes=[])
+        STATE.update(healthy=True, registry_error=False, port=self.a.server_port, writes=[], address="127.0.0.1")
         eventually(lambda: request("/auth/probe")[1].get("port") == self.a.server_port)
 
     def test_all_prefixes_preserve_query_and_authorization(self):
@@ -146,6 +151,26 @@ class GatewayIntegrationTests(unittest.TestCase):
 
     def test_unknown_route_is_safe_404(self):
         self.assertEqual(request("/not-a-service/"), (404, {"detail": "Not found."}))
+
+    def test_dual_stack_hostname_never_routes_to_unreachable_ipv6(self):
+        families = {entry[0] for entry in socket.getaddrinfo("dualstack.gateway.test", None, type=socket.SOCK_STREAM)}
+        self.assertEqual(families, {socket.AF_INET, socket.AF_INET6})
+        STATE.update(address="dualstack.gateway.test", port=self.b.server_port)
+        eventually(lambda: request("/academic/probe")[1].get("port") == self.b.server_port)
+        config = Path("/etc/nginx/nginx.conf").read_text()
+        self.assertIn(f"server 127.0.0.1:{self.b.server_port};", config)
+        self.assertNotIn("dualstack.gateway.test", config)
+        self.assertNotIn("fd00::123", config)
+        for _ in range(40):
+            status, payload = request("/academic/probe")
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["port"], self.b.server_port)
+
+    def test_ipv6_only_registry_instance_is_unavailable_in_ipv4_mode(self):
+        STATE["address"] = "fd00::123"
+        eventually(lambda: request("/academic/probe")[0] == 503)
+        STATE["address"] = "127.0.0.1"
+        eventually(lambda: request("/academic/probe")[0] == 200)
 
 
 if __name__ == "__main__":

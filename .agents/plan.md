@@ -1,48 +1,42 @@
-# Plan: Topic response names through academic-service
+﻿# Plan: Composite student/lecturer and identity management
 
-Status: Completed after user approval (`ok`). Steps 1-7 are complete.
+Status: Awaiting explicit approval.
 
-## Ordered steps
-1. Add an explicit display-name-only DTO and read-only batch endpoint in auth-service. Use constant-time service-token comparison, deny when unconfigured, and constrain request size/ID count. Preserve public auth contracts.
-2. Add an academic batch name-resolution endpoint protected by existing JWT authentication, accessible to authenticated readers even though POST carries a read-only batch. Query only academic-owned Majors and Lecturers. Resolve lecturer identity names through the new auth contract using the dedicated service credential, Consul discovery, bounded 2-second per-call timeout and safe failure handling. No cross-service ORM.
-3. Extend topic's HTTP client to fetch names from academic in batches of <=100 IDs with per-request deduplication and one discovery resolution per enrichment operation. Reuse the existing timeout, circuit/failure conventions and redirect protections. Keep write validation separate from optional name resolution.
-4. Replace response fields with nullable major_name and avisor_name. Supply enriched DTO data outside the serializer; keep network access outside serialization and outside write transactions. Apply to list/detail and successful write responses. Return null for missing/unavailable names, without replacing IDs in storage or request DTOs.
-5. Add automated tests in all three services for exact response fields, batch deduplication, correct full-name composition, nullable advisor, missing references/names, authentication/role behavior, internal-token security, discovery/timeout/malformed payloads and fallback after successful writes. Use mocked network and disposable databases only.
-6. Update root/service READMEs, .env.example files and task/plan status. Describe breaking response changes, exact spelling, internal contract, environment credential setup, lookup limits, timeout/call counts, and fallback semantics.
-7. Run each affected service's installed Python environment: python manage.py check and python manage.py test. Review scoped git diff --check and ensure no database, migration, dependency, gateway or unrelated files changed. Existing CI already covers all three services; change CI only if verification commands change.
-
-## Expected files
-- topic-service/topic_manager/{serializers,views,clients,tests}.py; dedicated enrichment module if useful; topic-service README and .env.example.
-- academic-services/config/{urls,settings}.py; new display-name DTO/view/client/test module(s) within LectureManager or a local lookup package; academic README and .env.example.
-- auth-service/config/{urls,settings}.py; authentication display-name DTO/view/permission/test additions or dedicated local module(s); auth README and .env.example.
-- Root README.md, .agents/task.md and .agents/plan.md.
-No schema, model mapping, migration, dependency or infrastructure changes are planned.
-
-## Verification and rollback
-Check/test all three affected services, mocked contract/security/failure tests, DTO field assertions and batched lookup counts; preserve existing CRUD regression coverage. No live service calls or real database writes. Revert only this task's reviewed file-specific changes to restore ID responses and remove the new optional contracts/settings; preserve prior CRUD implementation and unrelated work. There is no data/schema rollback.
-
----
-
-# Current plan: Admin login diagnosis and minimal fix
-Status: Awaiting explicit approval. Earlier topic-name plan remains pending.
-
-1. Obtain the failing admin UserId/email and confirm whether the running auth-service uses this checkout and database (no password requested).
-2. Inspect only the relevant auth-owned record in read-only mode; report presence, role and password format without disclosing credentials. Inspect startup/database selection as needed without reading or printing secrets or calling external services.
-3. Reproduce any identified code defect with mocked Users data and add a focused regression test. Apply a minimal fix only if it preserves the existing plaintext login contract. If diagnosis requires creating/resetting an account, supporting password hashes, or changing database configuration, update task/plan and obtain explicit approval for that concrete scope first.
-4. For a code fix, run venv/Scripts/python.exe manage.py check and manage.py test in services/auth-service; check the scoped diff. Update documentation only if behavior changes and has been approved.
-5. Record findings and remaining limitations. Do not modify the shared database during tests.
+## Ordered implementation
+1. Finish scoped read-only inspection of schema SQL/indexes, auth/academic security, DTO/test conventions and relevant downstream references. Verify enum/value assumptions; retain unmanaged table mappings and unchanged schema.
+2. Define versioned contracts: internal auth identity CRUD/batch lookup with service token + role-1 caller validation; composite academic /api/v1/students/ and /api/v1/lecturers/ CRUD with nested safe user DTOs. Support string IDs in the new version while preserving old numeric student routes. Document request/response/error formats, password behavior, role restrictions, body/batch limits and operation failure states.
+3. Implement auth-owned Users application operations/DTOs/views and safe integrity handling. Reuse its existing unmanaged model; adjust its mapping documentation only where needed. Assign student/lecturer roles server-side; protect immutable IDs, unrelated users/admins, secrets and audit/business references.
+4. Implement academic identity REST client using Consul and environment-supplied service credentials, finite timeouts, redirect/response bounds, rate expectations, correlation IDs and bounded circuit behavior; never retry writes automatically.
+5. Implement composite workflows in StudentManager/LectureManager: validate academic inputs first, perform owned-table writes and authenticated identity REST calls in an explicit order, compensate confirmed failures where safe and return conflict/unavailable/incomplete states on uncertain outcomes. Never hold a SQLite write transaction across REST. Keep legacy endpoints compatible.
+6. Add explicit Gateway denies for auth internal management paths, without changing public login/refresh/me or service prefixes. Update Gateway unit and real-Nginx integration tests.
+7. Extend frontend academic API types and student/lecturer pages/popups with safe identity fields, create password/edit optional password, response-only timestamps if shown, backend field errors, code/name Search and complete-delete handling. Preserve F5 session restoration and existing department/major behavior.
+8. Add automated backend contract/service/client tests, isolated SQLite integrity/compensation tests and frontend CRUD/popup tests. Update existing role, auth and legacy-contract regression assertions.
+9. Update root, auth, academic, Gateway and frontend READMEs plus affected .env.example settings. Update CI only if new test commands/dependencies are actually required; no package installation/schema change planned.
+10. Run focused tests, relevant Django checks/full tests, Gateway unit/integration tests and frontend lint/full tests/build. Review diff/status and record any remaining operational configuration or recovery limitations.
 
 ## Expected files
-.agents/task.md and .agents/plan.md. Conditionally services/auth-service/authentication/views.py and authentication/tests.py for a confirmed compatible login defect. No other files are authorized by this plan.
+- services/auth-service/authentication/: model mapping comment, new identity-management service/DTO/view/tests; config/urls.py and config/settings.py as required.
+- services/academic-services/StudentManager/: serializers/services/views/urls/tests; models.py only if schema-consistent academic mapping correction is necessary.
+- services/academic-services/LectureManager/: serializers/services/views/urls/tests; model remains academic-only.
+- Shared academic client/workflow modules and tests under academic-service; config/settings.py and .env.example.
+- auth-service .env.example and auth/academic READMEs.
+- api-gateway/discovery.py and nginx.conf if bootstrap denies are needed; Gateway tests and README. Existing IPv4 discovery fix is retained.
+- fe/src/features/academic/: typed DTOs/API, StudentPage, LecturerPage, field controls/config/styles and relevant tests.
+- README.md, fe/README.md, .agents/task.md, .agents/plan.md; CI only if affected checks need changes.
+- No database files, migrations, dependency locks or real environment secret files.
 
-## Verification and rollback
-Use isolated mocked account fixtures for role 1 success, invalid credentials, token role, refresh/profile and existing login regressions. Revert only changes from this task; preserve existing work. No database rollback is needed because this plan authorizes no database writes.
+## Verification
+- Auth/academic unit and API tests for successful lifecycle, validation failures, duplicate IDs/email/phone, wrong roles, service-token rejection, password omission and safe profile outputs.
+- Owned-table mappings and NO ACTION constraints verified using isolated temporary databases; no service test may mutate the project database or query another service's tables from its application layer.
+- Mock REST tests for discovery failure, timeouts, redirects, malformed responses, circuit state, create/update/delete failure ordering and compensation/uncertain outcomes. No request replay after a non-idempotent timeout.
+- Gateway unit and isolated Nginx integration tests confirm internal management paths are blocked and public auth/academic routing still works with IPv4 settings.
+- Frontend tests cover user fields in add/edit popups, optional edit password, safe prefill, code/name search, complete deletion, 409/503/incomplete errors and legacy department/major/F5 behavior.
+- Run python manage.py check and python manage.py test in auth-service and academic-service with existing environments; inspect CI and run affected downstream tests if contracts require it.
+- Run Gateway tests/Compose validation/build/isolated integration; frontend npm run lint/test/build.
+- Review git diff --check/status; document any new environment values without exposing or modifying secrets. No live destructive CRUD tests.
 
-## Verification results
-- topic-service: manage.py check passed; full manage.py test passed (37 tests).
-- academic-services: manage.py check passed; full manage.py test passed (116 tests).
-- auth-service: manage.py check passed; full manage.py test passed (23 tests).
-- All HTTP tests mock transports; topic persistence regression tests use disposable SQLite. No live external service calls or real database writes were required.
-- Scoped diff/whitespace checks passed. Existing CI already covers these commands; no CI/dependency/schema/gateway updates needed.
-- Added per-cache lookup quotas and bounded JSON parsers within the approved contract/resource-limit scope.
-- Runtime setup still requires a matching service token in auth/academic environments; live integration remains unverified.
+## Rollback
+Revert only this task's auth/academic/Gateway/frontend/documentation changes; retain previous academic UI, F5 session and IPv4 fixes. No schema rollback is required. Local service operations stay in isolated tests. If production schema changes or durable workflow storage become necessary, stop and submit an updated plan with backup/compatibility/locking/rollback details before proceeding.
+
+## Approval boundary
+Only task/plan files are written until approval. This plan explicitly includes auth-service/internal REST and frontend changes in addition to the two requested academic apps; it does not authorize direct Users access from academic-service, cascade deletion of linked business/audit data, or real user-data writes.

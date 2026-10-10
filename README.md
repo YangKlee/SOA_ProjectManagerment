@@ -26,8 +26,13 @@ Run `npm run lint`, `npm run test`, and `npm run build` inside `fe/`.
 Frontend checks run independently in `.github/workflows/frontend-tests.yml`.
 Login calls `/auth/login/` using MSSV/UserID and password. Server role 1 routes
 to `/admin`, role 2 to `/lecture`, and role 3 to `/student`. Role routes require
-an in-memory session and support logout; their domain screens are placeholders.
-Reload requires login again. Frontend auth tests use mocked API responses;
+an authenticated session and support logout. Admin academic screens provide CRUD.
+Only the access token is saved in tab-scoped sessionStorage; F5 restores a valid
+session by validating it through `/auth/me/` before route guards redirect or
+render protected pages. Expired/invalid tokens require login again; transient
+restoration failures show retry/return-to-login actions. Logout clears memory
+and saved tokens. No password, refresh token or profile persistence, automatic
+token refresh, or localStorage is used. Frontend auth tests use mocked API responses;
 live Gateway/account integration has not been verified. Production hosting
 needs SPA history fallback while preserving API forwarding.
 See [frontend README](fe/README.md)
@@ -144,6 +149,15 @@ ports/prefixes and forwarded bearer JWT contract remain unchanged. Discovery
 uses bounded polling/timeouts and a 15-second default stale-data TTL, after
 which routes fail closed on the next polling cycle. Upstream writes are not
 retried automatically. Registry failures never enable a static backend fallback.
+
+The Docker Desktop Gateway configuration sets `GATEWAY_UPSTREAM_IP_FAMILY=ipv4`.
+Backend hostnames discovered through Consul are resolved to IPv4 literals on
+each refresh, avoiding intermittent 503s when `host.docker.internal` also returns
+an unreachable IPv6 address. DNS work has a bounded per-service deadline
+(`GATEWAY_DNS_TIMEOUT_SECONDS=2`); failures retain only the bounded last-good
+discovery cache. No backend IP is hard-coded. IPv6-capable deployments can
+explicitly select `auto` mode. Rebuild/recreate only Gateway after changing this
+configuration; service ports, prefixes and backend configuration are unchanged.
 
 Configure each backend's local `.env` with `CONSUL_AUTO_REGISTER=true`, a unique
 instance ID, reachable address/port and health URL, then start on `0.0.0.0` at

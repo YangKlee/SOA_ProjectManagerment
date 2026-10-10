@@ -3,6 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AuthUser } from '../../features/auth/auth-types'
 import { MainLayout } from './MainLayout'
 
+vi.mock('../../features/academic/pages/DepartmentPage', () => ({ DepartmentPage: () => <section aria-label="Academic departments" /> }))
+vi.mock('../../features/academic/pages/MajorPage', () => ({ MajorPage: () => <section aria-label="Academic majors" /> }))
+vi.mock('../../features/academic/pages/StudentPage', () => ({ StudentPage: () => <section aria-label="Academic students" /> }))
+vi.mock('../../features/academic/pages/LecturerPage', () => ({ LecturerPage: () => <section aria-label="Academic lecturers" /> }))
+
 const user: AuthUser = { user_id: 'SV001', first_name: 'An', last_name: 'Nguyễn', role: 3 }
 function renderLayout(overrides: Partial<AuthUser> = {}) {
   const logout = vi.fn()
@@ -34,7 +39,8 @@ describe('Shared dashboard layout', () => {
     expect(screen.queryByText('Nguyễn Khánh Dương')).not.toBeInTheDocument()
     fireEvent.click(within(quickAccess).getByRole('button', { name: shortcuts[0] }))
     expect(screen.getByRole('heading', { name: shortcuts[0].replace('Mở ', ''), level: 1 })).toBeVisible()
-    expect(screen.getByText('Đang phát triển')).toBeVisible()
+    if (role === 1) expect(screen.getByRole('region', { name: 'Academic departments' })).toBeVisible()
+    else expect(screen.getByText('Đang phát triển')).toBeVisible()
   })
 
   it.each([1, 2, 3] as const)('opens the profile independently of role %s business menu order', (role) => {
@@ -70,7 +76,7 @@ describe('Shared dashboard layout', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Quản lý khoa' }))
     expect(screen.getByRole('button', { name: 'Quản lý khoa' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('heading', { name: 'Quản lý khoa', level: 1 })).toBeVisible()
-    expect(screen.getByText('Đang phát triển')).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Academic departments' })).toBeVisible()
     fireEvent.click(group)
     expect(group).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('button', { name: 'Quản lý khoa' })).not.toBeInTheDocument()
@@ -81,7 +87,7 @@ describe('Shared dashboard layout', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ĐỀ TÀI' }))
     expect(screen.queryByRole('button', { name: 'Quản lý đề tài' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Quản lý khoa' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Về tổng quan' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tổng quan' }))
     expect(screen.getByRole('button', { name: 'Tổng quan' })).toHaveAttribute('aria-current', 'page')
   })
 

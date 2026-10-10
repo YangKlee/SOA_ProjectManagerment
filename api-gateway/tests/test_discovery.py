@@ -8,7 +8,7 @@ from unittest.mock import patch
 from urllib.error import URLError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from discovery import Discovery, apply_config, endpoint, parse_instances, render
+from discovery import Discovery, apply_config, endpoint, parse_instances, render, resolve_ipv4
 
 
 def instance(address="127.0.0.1", port=8123, status="passing"):
@@ -17,6 +17,71 @@ def instance(address="127.0.0.1", port=8123, status="passing"):
 
 
 class DiscoveryTests(unittest.TestCase):
+    @patch("discovery.subprocess.run")
+    def test_ipv4_hostname_resolution_is_bounded_validated_and_deduplicated(self, run):
+        run.return_value.stdout = json.dumps({"dualstack.test": ["127.0.0.1", "127.0.0.1", "127.0.0.2"]})
+        records = [instance("dualstack.test"), instance("dualstack.test"), instance("::1")]
+        servers = parse_instances(records, "auth-service", "ipv4", dns_timeout=0.5)
+        self.assertEqual(servers, ["127.0.0.1:8123", "127.0.0.2:8123"])
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(json.loads(run.call_args.kwargs["input"]), ["dualstack.test"])
+        self.assertEqual(run.call_args.kwargs["timeout"], 0.5)
+        config = render({"auth-service": servers})
+        self.assertNotIn("dualstack.test", config)
+        self.assertNotIn("[::1]", config)
+
+    @patch("discovery.subprocess.run")
+    def test_ipv4_literals_skip_dns_and_ipv6_only_instances_fail_closed(self, run):
+        self.assertEqual(parse_instances([instance()], "auth-service", "ipv4"), ["127.0.0.1:8123"])
+        self.assertEqual(parse_instances([instance("::1")], "auth-service", "ipv4"), [])
+        run.assert_not_called()
+
+    @patch("discovery.subprocess.run")
+    def test_resolution_timeout_failure_and_invalid_results_are_safe(self, run):
+        for failure in [subprocess.TimeoutExpired("resolver", 0.1),
+                        subprocess.CalledProcessError(1, "resolver"), OSError("DNS unavailable")]:
+            run.side_effect = failure
+            with self.subTest(failure=failure), self.assertRaises(OSError):
+                resolve_ipv4({"dualstack.test"}, 0.1)
+        run.side_effect = None
+        for data in ["not json", "[]", "{}", '{"dualstack.test":[]}',
+                     '{"dualstack.test":["::1"]}', '{"dualstack.test":["x; return 200"]}',
+                     '{"dualstack.test":[123]}', " " * 262145]:
+            run.return_value.stdout = data
+            with self.subTest(data=data[:80]), self.assertRaises(OSError):
+                resolve_ipv4({"dualstack.test"}, 0.1)
+
+    @patch("discovery.urlopen")
+    @patch("discovery.subprocess.run")
+    def test_dns_failure_uses_only_bounded_last_good_ipv4_cache(self, run, urlopen):
+        urlopen.return_value.__enter__.return_value.read.return_value = json.dumps([instance("dualstack.test")]).encode()
+        run.return_value.stdout = '{"dualstack.test":["127.0.0.1"]}'
+        clock = [10]
+        discovery = Discovery("http://registry", stale_ttl=5, clock=lambda: clock[0], ip_family="ipv4")
+        self.assertEqual(discovery.refresh_one("auth-service"), ["127.0.0.1:8123"])
+        run.side_effect = subprocess.TimeoutExpired("resolver", 0.1)
+        clock[0] = 14
+        self.assertEqual(discovery.refresh_one("auth-service"), ["127.0.0.1:8123"])
+        clock[0] = 15
+        self.assertEqual(discovery.refresh_one("auth-service"), [])
+        run.side_effect = None
+        run.return_value.stdout = '{"dualstack.test":["127.0.0.2"]}'
+        self.assertEqual(discovery.refresh_one("auth-service"), ["127.0.0.2:8123"])
+
+    def test_invalid_family_and_dns_timeout_are_rejected(self):
+        for family in ["IPv4", "ipv6", "", "unexpected"]:
+            with self.subTest(family=family), self.assertRaises(ValueError):
+                Discovery("http://registry", ip_family=family)
+        for timeout in [0, -1, float("nan"), float("inf"), 11]:
+            with self.subTest(timeout=timeout), self.assertRaises(ValueError):
+                Discovery("http://registry", dns_timeout=timeout)
+
+    @patch("discovery.IPV4_LOOKUP", "import time; time.sleep(60)")
+    def test_stalled_resolver_process_is_terminated_at_deadline(self):
+        with self.assertRaises(OSError) as caught:
+            resolve_ipv4({"dualstack.test"}, 0.1)
+        self.assertIsInstance(caught.exception.__cause__, subprocess.TimeoutExpired)
+
     def test_only_healthy_instances_deduplicated_and_node_fallback(self):
         self.assertEqual(parse_instances([instance(), instance(), instance(status="critical"),
                                          instance(address="")], "auth-service"),

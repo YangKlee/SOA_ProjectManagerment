@@ -1,7 +1,9 @@
 ﻿import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import MockAdapter from 'axios-mock-adapter'
 import { Link, MemoryRouter, useLocation } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { StrictMode } from 'react'
+import { SESSION_TOKEN_KEY } from '../features/auth/session-storage'
 import { AuthProvider } from '../features/auth/AuthProvider'
 import { apiClient, setAccessToken } from '../services/api-client'
 import { App } from './App'
@@ -109,7 +111,8 @@ describe('Login and role routes', () => {
     await apiClient.get('/auth/me/')
     expect(mock.history.get[0].headers?.Authorization).toBe('Bearer access-test-token')
     expect(localStorage.getItem('access')).toBeNull()
-    expect(sessionStorage.getItem('access')).toBeNull()
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('access-test-token')
+    expect(sessionStorage.length).toBe(1)
   })
 
   it('locks submission while pending and submits only once', async () => {
@@ -198,10 +201,41 @@ describe('Login and role routes', () => {
     submitForm()
     fireEvent.click(await screen.findByRole('button', { name: 'Đăng xuất' }))
     expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull()
     await apiClient.get('/probe/')
     expect(mock.history.get[0].headers?.Authorization).toBeUndefined()
     fireEvent.click(screen.getByRole('link', { name: 'Go /student' }))
     await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/login'))
+  })
+
+  it('opens academic management for admin and clears the session on academic 401', async () => {
+    mock.onPost('/auth/login/').reply(200, responseForRole(1))
+    mock.onGet('/academic/api/departments/').reply(401)
+    mock.onGet('/probe/').reply(200, {})
+    renderApp()
+    fillForm(); submitForm()
+    fireEvent.click(await screen.findByRole('button', { name: 'Quản lý khoa' }))
+    expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull()
+    expect(mock.history.get[0].url).toBe('/academic/api/departments/')
+    expect(mock.history.get[0].headers?.Authorization).toBe('Bearer access-test-token')
+    await apiClient.get('/probe/')
+    expect(mock.history.get.at(-1)?.headers?.Authorization).toBeUndefined()
+  })
+
+  it('connects all four admin menu items to their academic screens', async () => {
+    mock.onPost('/auth/login/').reply(200, responseForRole(1))
+    for (const resource of ['departments', 'majors', 'students', 'lecturers', 'sub-majors']) {
+      mock.onGet(`/academic/api/${resource}/`).reply(200, [])
+    }
+    renderApp()
+    fillForm(); submitForm()
+    await screen.findByRole('heading', { name: 'Quản trị viên' })
+    for (const singular of ['khoa', 'ngành', 'sinh viên', 'giảng viên']) {
+      fireEvent.click(screen.getByRole('button', { name: `Quản lý ${singular}` }))
+      expect(await screen.findByRole('table', { name: `Danh sách ${singular}` })).toBeVisible()
+      expect(screen.getByRole('button', { name: `Thêm ${singular}` })).toBeEnabled()
+    }
   })
 
   it('cancels login if the form is unmounted before a response arrives', async () => {
@@ -218,6 +252,92 @@ describe('Login and role routes', () => {
     expect(screen.getByTestId('path')).toHaveTextContent('/login')
     await apiClient.get('/probe/')
     expect(mock.history.get[0].headers?.Authorization).toBeUndefined()
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull()
+  })
+
+  it.each(roles)('restores role $role after F5 without prematurely redirecting', async ({ role, path, title }) => {
+    mock.onPost('/auth/login/').reply(200, responseForRole(role))
+    const first = renderApp()
+    fillForm(); submitForm()
+    await screen.findByRole('heading', { name: title })
+    first.unmount()
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('access-test-token')
+    let complete!: (response: [number, unknown]) => void
+    mock.onGet('/auth/me/').reply(() => new Promise<[number, unknown]>((resolve) => { complete = resolve }))
+    renderApp(path)
+    expect(screen.getByText('Đang xác thực phiên đăng nhập…')).toBeVisible()
+    expect(screen.getByTestId('path')).toHaveTextContent(path)
+    expect(screen.queryByRole('heading', { name: 'Đăng nhập' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    await waitFor(() => expect(mock.history.get).toHaveLength(1))
+    expect(mock.history.get[0].headers?.Authorization).toBe('Bearer access-test-token')
+    await act(async () => complete([200, responseForRole(role).user]))
+    expect(await screen.findByRole('heading', { name: title })).toBeVisible()
+    expect(screen.getByTestId('path')).toHaveTextContent(path)
+  })
+
+  it.each(['/admin', '/login', '/missing'])('uses the server role when restoring at %s', async (path) => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    mock.onGet('/auth/me/').reply(200, responseForRole(3).user)
+    renderApp(path)
+    expect(await screen.findByRole('heading', { name: 'Sinh viên' })).toBeVisible()
+    expect(screen.getByTestId('path')).toHaveTextContent('/student')
+  })
+
+  it.each([401, 403, 'malformed', 'invalid-role'] as const)('clears an invalid restored session: %s', async (failure) => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'invalid-token')
+    mock.onGet('/auth/me/').reply(typeof failure === 'number' ? failure : 200, failure === 'invalid-role' ? responseForRole(9).user : {})
+    renderApp('/admin')
+    expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull()
+  })
+
+  it.each(['network', 'timeout', '503'] as const)('retains the token and allows explicit retry after restore %s', async (failure) => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    const handler = mock.onGet('/auth/me/')
+    if (failure === 'network') handler.networkError()
+    else if (failure === 'timeout') handler.timeout()
+    else handler.reply(503)
+    renderApp('/admin')
+    expect(await screen.findByRole('alert')).toBeVisible()
+    expect(screen.getByTestId('path')).toHaveTextContent('/admin')
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('saved-token')
+    mock.onGet('/auth/me/').reply(200, responseForRole(1).user)
+    fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }))
+    expect(await screen.findByRole('heading', { name: 'Quản trị viên' })).toBeVisible()
+    expect(mock.history.get).toHaveLength(2)
+  })
+
+  it('can abandon a failed restore and return to login', async () => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    mock.onGet('/auth/me/').reply(503)
+    renderApp('/admin')
+    fireEvent.click(await screen.findByRole('button', { name: 'Về đăng nhập' }))
+    expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull()
+  })
+
+  it('restores safely under StrictMode and clears persistence after logout', async () => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'saved-token')
+    mock.onGet('/auth/me/').reply(200, responseForRole(1).user)
+    render(<StrictMode><MemoryRouter initialEntries={['/admin']}><AuthProvider><App /></AuthProvider></MemoryRouter></StrictMode>)
+    expect(await screen.findByRole('heading', { name: 'Quản trị viên' })).toBeVisible()
+    expect(mock.history.get).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }))
+    expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeVisible()
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull()
+  })
+
+  it('continues login with a visible warning if session storage writes are denied', async () => {
+    mock.onPost('/auth/login/').reply(200, responseForRole(1))
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })
+    try {
+      renderApp(); fillForm(); submitForm()
+      expect(await screen.findByRole('heading', { name: 'Quản trị viên' })).toBeVisible()
+      expect(screen.getByText(/Trình duyệt không cho phép lưu phiên/)).toBeVisible()
+      expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull()
+    } finally { write.mockRestore() }
   })
 })
 

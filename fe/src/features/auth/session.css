@@ -1,0 +1,7 @@
+.session-screen { min-height: 100svh; display: grid; place-items: center; background: #f4f3fa; color: #292741; padding: 24px; }
+.session-screen section { width: min(520px, 100%); background: white; padding: 32px; border-radius: 14px; box-shadow: 0 8px 30px #36319912; }
+.session-screen h1 { font-size: 25px; letter-spacing: normal; margin: 0 0 16px; }
+.session-screen div { display: flex; flex-wrap: wrap; gap: 12px; }
+.session-screen button { background: #363199; color: white; border: 0; border-radius: 7px; padding: 10px 16px; font: inherit; cursor: pointer; }
+.session-screen button:focus-visible { outline: 3px solid #908bd7; outline-offset: 3px; }
+.session-warning { margin: 0; padding: 10px 20px; background: #fff4da; color: #714d13; font-size: 14px; }

@@ -1,6 +1,6 @@
 # Frontend — Quản lý đồ án tốt nghiệp
 
-React + Vite + TypeScript, dùng npm, React Router và Axios client chung. Đã triển khai trang đăng nhập và điều hướng/bảo vệ route theo role. Các trang quản trị viên, giảng viên và sinh viên dùng chung dashboard với header, sidebar theo vai trò, thông tin tài khoản và đăng xuất; CRUD nghiệp vụ chưa được triển khai. Luồng auth đã được kiểm thử bằng API mock, chưa xác minh với tài khoản backend thực tế.
+React + Vite + TypeScript, dùng npm, React Router và Axios client chung. Đã triển khai đăng nhập, bảo vệ route theo role và dashboard chung. Quản trị viên có thể quản lý khoa, ngành, sinh viên, giảng viên qua API Gateway. Các luồng đã được kiểm thử bằng API mock; chưa xác minh với tài khoản backend thực tế.
 
 ## Chạy tại máy
 
@@ -32,6 +32,7 @@ src/
   app/                  # Routes, trang đích theo role và integration tests
   config/               # Gateway dev proxy và test HTTP qua Vite thật
   features/auth/        # Login, DTO/API, auth context/provider, route guards
+  features/academic/    # DTO/API, CRUD học vụ, cấu hình form, CSS và tests
   services/
     api-client.ts       # Axios instance và quản lý access token trong bộ nhớ
     api-error.ts        # ApiError và chuẩn hóa lỗi
@@ -95,9 +96,15 @@ Response contract theo [auth-service README](../services/auth-service/README.md)
 
 Ví dụ trên chỉ hiển thị các field identity được frontend sử dụng; DTO backend có thêm các field được mô tả trong service README. `identifier` được trim, password giữ nguyên. HTTP 400/422 báo dữ liệu không hợp lệ; 401 báo sai thông tin đăng nhập; lỗi network/timeout hiển thị thông báo thử lại. Response thiếu field cần thiết hoặc role ngoài số 1/2/3 không tạo session.
 
-`AuthProvider` giữ user và access token trong bộ nhớ; Axios gắn Bearer cho các request sau đăng nhập. Không dùng localStorage/sessionStorage, không giữ refresh token và không refresh tự động. Reload hoặc đóng tab sẽ cần đăng nhập lại. Đăng xuất chỉ xóa session frontend, không gọi API thu hồi token vì chưa có contract logout/revocation. Backend chịu trách nhiệm xác thực JWT, hạn token và quyền truy cập; frontend guard chỉ kiểm soát điều hướng.
+`AuthProvider` giữ user và access token trong bộ nhớ; đồng thời lưu **chỉ access token** vào `sessionStorage` với key `graduation-project.auth.access.v1`. Không lưu password, refresh token, user/profile hoặc role; không dùng localStorage và không refresh token tự động. Axios gắn Bearer từ bộ nhớ cho các request.
 
-Khi thêm protected API calls, xử lý 401 bằng `useAuth().logout()` và cho người dùng đăng nhập lại. Hiện các trang role chưa gọi API nghiệp vụ nên chưa có luồng hết hạn token chủ động.
+Khi **F5/reload trong cùng tab**, frontend đọc token đã lưu và gọi `GET /auth/me/` để xác thực và lấy user/role hiện tại. Trong lúc chờ, route hiển thị “Đang xác thực phiên đăng nhập…” và chưa mở dashboard hoặc chuyển sang login. Phiên hợp lệ giữ đăng nhập; 401/403 hoặc response profile không hợp lệ xóa phiên và về login. Lỗi network/timeout/5xx hiển thị màn hình có **Thử lại** hoặc **Về đăng nhập**, giữ token đã lưu nhưng chưa cho truy cập trang bảo vệ. Mỗi lần khôi phục chỉ có một request đang chờ, không tự retry.
+
+Token vẫn hết hạn theo backend: reload sau khi hết hạn cần đăng nhập lại. sessionStorage theo phiên tab, không phải chức năng “ghi nhớ đăng nhập”; đóng tab thường kết thúc phiên lưu, nhưng trình duyệt có thể giữ dữ liệu khi khôi phục/nhân bản tab. Nếu trình duyệt chặn lưu trữ, phiên hiện tại vẫn dùng được và có cảnh báo rằng reload có thể cần đăng nhập lại. Token đọc được bằng JavaScript nên vẫn chịu rủi ro XSS; không đưa dữ liệu không tin cậy vào HTML hoặc log token.
+
+Đăng xuất xóa token trong bộ nhớ và sessionStorage, không gọi API thu hồi vì backend chưa có contract logout/revocation. Logout, phiên mới và unmount hủy request khôi phục; phản hồi đến muộn không được tạo lại phiên. Unmount do reload giữ sessionStorage để lần tải sau có thể khôi phục. Backend chịu trách nhiệm xác thực JWT, hạn token và quyền truy cập; frontend guard chỉ kiểm soát điều hướng.
+
+Các màn hình học vụ xử lý 401 bằng logout để xóa phiên và đưa người dùng về đăng nhập. Lỗi 403 giữ phiên và hiển thị thông báo thiếu quyền; frontend không thay thế kiểm tra quyền ở backend.
 
 Production hosting phải trả `index.html` cho đường dẫn SPA `/login`, `/admin`, `/lecture`, `/student` (kể cả khi mở trực tiếp). Giữ API prefixes chuyển đến Gateway, không rewrite API thành HTML. Không thay đổi cổng hoặc route backend.
 
@@ -152,7 +159,7 @@ try {
 }
 ```
 
-Client giữ chuẩn Axios: trả về `AxiosResponse<T>`, đọc DTO tại `response.data`. `Accept: application/json` là mặc định; Axios tự thiết lập Content-Type khi gửi JSON hoặc FormData. Timeout là 10 giây. Request nhận Bearer token hiện tại nếu có; token chỉ tồn tại trong bộ nhớ và mất khi reload. Không có refresh tự động hoặc retry; caller xử lý `401` theo luồng auth đã thống nhất. Dùng `AbortController` và tùy chọn `signal` để hủy request.
+Client giữ chuẩn Axios: trả về `AxiosResponse<T>`, đọc DTO tại `response.data`. `Accept: application/json` là mặc định; Axios tự thiết lập Content-Type khi gửi JSON hoặc FormData. Timeout là 10 giây. Request nhận Bearer token từ bộ nhớ; `AuthProvider` quản lý lưu token theo tab và khôi phục khi reload qua `/auth/me/`. Không có refresh tự động hoặc retry; caller xử lý `401` bằng logout để xóa cả token lưu trong tab. Dùng `AbortController` và tùy chọn `signal` để hủy request.
 
 Chỉ truyền URL tương đối thuộc Gateway vào instance này; không dùng nó cho dịch vụ ngoài vì interceptor sẽ đính kèm token. Không log token hoặc toàn bộ lỗi response; không hiển thị trực tiếp `details` như HTML. Authorization và validation nghiệp vụ vẫn thuộc backend.
 
@@ -182,8 +189,35 @@ Menu nghiệp vụ nằm trong `src/components/layout/dashboard-menu.ts`:
 
 Các vai trò giữ Tổng quan và Đăng xuất. Sidebar không còn nhóm Trang cá nhân hoặc các mục học vụ/hướng dẫn cũ. Thông tin cá nhân truy cập từ bảng tài khoản trên header hoặc nút “Thông tin của tôi” ở trang tổng quan, độc lập với thứ tự menu nghiệp vụ. Trang tổng quan có lời chào, tối đa ba truy cập nhanh lấy từ menu của vai trò hiện tại và thông tin tài khoản.
 
-Việc chọn mục menu hiện chỉ đổi nội dung trong route vai trò hiện tại, hiển thị “Đang phát triển”; chưa có route con, CRUD, dữ liệu học vụ hoặc API thông báo. Reload trở về tổng quan và cần đăng nhập lại theo cơ chế phiên hiện tại. Không hiển thị thống kê hoặc số thông báo giả. Logo đang dùng chữ QNU tạm thời, cần thay bằng ảnh chính thức khi có tài sản được cung cấp.
+Việc chọn mục menu đổi nội dung trong route vai trò hiện tại, không tạo route con. Bốn mục học vụ của quản trị viên hiển thị màn hình CRUD; các mục khác vẫn hiển thị “Đang phát triển”. Reload trở về tổng quan nhưng giữ đăng nhập nếu token lưu theo tab còn hợp lệ và `/auth/me/` xác thực thành công. Chưa lưu mục menu, nội dung form hoặc từ khóa tìm kiếm qua reload. Chưa có API thông báo. Logo đang dùng chữ QNU tạm thời.
 
 Trên màn hình rộng hơn 800px, sidebar mặc định mở và có thể ẩn. Ở màn hình nhỏ, sidebar mặc định đóng, mở dưới dạng drawer với nền che, khóa cuộn trang, giữ focus bàn phím bên trong và đóng bằng Escape/nút đóng/nhấn nền che/chọn mục. Các bảng trên header đóng bằng Escape hoặc nhấn ra ngoài. Có liên kết bỏ qua điều hướng để đến nội dung chính.
 
 Test layout kiểm tra menu/identity của cả ba vai trò, fallback tên, sidebar, nhóm menu, chọn mục, truy cập nhanh, thông báo/tài khoản, logout, drawer mobile và thay đổi breakpoint. Integration tests tiếp tục kiểm tra đăng nhập, role guards và xóa token khi đăng xuất. Chạy `npm run lint`, `npm run test`, `npm run build` để xác minh.
+
+## Quản lý học vụ
+
+Đăng nhập role **1**, mở nhóm **HỌC VỤ** và chọn khoa, ngành, sinh viên hoặc giảng viên. Mỗi chức năng có page riêng, danh sách, tìm kiếm trên dữ liệu đã tải, tải lại, thêm, sửa và xác nhận xóa. API danh sách hiện trả mảng đầy đủ; chưa có phân trang phía server. Bảng hỗ trợ cuộn ngang trên màn hình nhỏ.
+
+Nhập từ khóa rồi bấm **Search** (hoặc Enter trong ô tìm kiếm) để áp dụng bộ lọc. Gõ hoặc xóa từ khóa chưa thay đổi kết quả; gửi từ khóa trống để hiện tất cả bản ghi. Khoa/ngành tìm theo mã hoặc tên, không phân biệt hoa thường. Sinh viên/giảng viên chỉ tìm theo mã vì DTO hiện không trả họ tên. Không tìm theo tên khoa/ngành liên quan, GPA hoặc tín chỉ.
+
+**Thêm/Sửa** mở popup có nhãn trường, lỗi validation và lỗi API bên trong. Có nút Lưu, Hủy, Đóng; Escape đóng khi chưa gửi. Popup giữ focus bàn phím bên trong, khóa tương tác/cuộn nền và trả focus về nút mở khi đóng nếu nút còn dùng được. Trong khi lưu, không thể đóng hoặc gửi lặp. Lưu thành công và hoàn tất tải lại sẽ đóng popup.
+
+Các page nằm tại `features/academic/pages/DepartmentPage.tsx`, `MajorPage.tsx`, `StudentPage.tsx`, `LecturerPage.tsx`. Mỗi page khai báo cột, trường form và trường tìm kiếm riêng. `components/` chứa `AcademicSearch`, `AcademicTable`, `AcademicFormField`, `Modal`, `DeleteConfirmation` và khung hiển thị `AcademicManagementView`; `useAcademicManagement.ts` quản lý vòng đời request và trạng thái CRUD dùng chung. Dashboard gọi trực tiếp từng page, giữ cách chọn menu trong route vai trò hiện tại.
+
+| Màn hình | Gateway endpoint | Trường DTO |
+| --- | --- | --- |
+| Khoa | `/academic/api/departments/` | `department_id`, `name` |
+| Ngành | `/academic/api/majors/` | `major_id`, `name`, `department_id` |
+| Sinh viên | `/academic/api/students/` | `student_id`, `major_id`, `sub_major_id`, `accumulated_credits`, `gpa` |
+| Giảng viên | `/academic/api/lecturers/` | `lecturer_id`, `department_id` |
+
+Danh sách dùng GET, thêm dùng POST, sửa dùng PATCH và xóa dùng DELETE tại `{endpoint}{id}/`. ID được giữ nguyên khi sửa. Request dùng Axios client chung, Bearer token trong bộ nhớ và timeout 10 giây; không tự retry thao tác ghi. Khi chuyển màn hình, request đang chờ được hủy và phản hồi cũ không cập nhật màn hình mới.
+
+Khoa/ngành được tải làm lựa chọn quan hệ. Sinh viên chọn ngành và chuyên ngành từ `/academic/api/majors/` và `/academic/api/sub-majors/`; chuyên ngành lọc theo ngành, được xóa lựa chọn khi đổi ngành. Không có màn hình CRUD chuyên ngành trong phạm vi này. Quan hệ không bắt buộc có thể bỏ chọn và được gửi `null`; GPA là số hữu hạn, tín chỉ là số nguyên. Quy tắc nghiệp vụ và ràng buộc tham chiếu vẫn do backend xác nhận.
+
+**Giới hạn ID của backend:** route chi tiết khoa/ngành/sinh viên hiện dùng `<int:pk>`, dù DTO nhận chuỗi. Form tạo mới yêu cầu mã số nguyên không âm ở dạng chuẩn (ví dụ `123`, không dùng `SV001` hoặc `00123`) để bản ghi có thể sửa/xóa qua route hiện có. Dữ liệu cũ có mã không tương thích vẫn hiển thị, nhưng nút sửa/xóa bị khóa. Giảng viên dùng `<str:pk>` và hỗ trợ mã chữ như `GV001`. Frontend không sửa route backend.
+
+Sinh viên và giảng viên cần **UserID đã tồn tại trong auth-service**. Các DTO học vụ không trả họ tên/email và màn hình này không tạo tài khoản. Lỗi khóa ngoại hoặc xóa dữ liệu đang được tham chiếu có thể bị backend từ chối. Lỗi 400 theo trường được hiển thị dưới form; lỗi HTTP/network/timeout có thông báo an toàn. Form giữ dữ liệu khi gửi thất bại, khóa khi đang gửi và không tự gửi lại. Nếu ghi thành công nhưng tải lại thất bại, thông báo lưu thành công và lỗi tải lại cùng hiển thị; dùng “Tải lại” để lấy dữ liệu mới.
+
+Tests học vụ dùng Axios Mock Adapter và Testing Library để kiểm tra CRUD của cả bốn page, DTO/method/path/Bearer, quan hệ nullable, tìm kiếm chỉ khi submit và loại trừ trường không liên quan, popup thêm/sửa, focus/trap/return, Escape/Hủy/Đóng, khóa popup khi đang lưu, giới hạn ID, lọc chuyên ngành, validation, lỗi HTTP/network/timeout, chống gửi lặp và hủy request. Integration test kiểm tra bốn menu mở đúng page và academic 401 xóa session/token. Các test này không xác minh kết nối Gateway/Consul/database thực tế.

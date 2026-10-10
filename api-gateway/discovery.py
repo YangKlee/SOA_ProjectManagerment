@@ -7,8 +7,8 @@ import os
 from pathlib import Path
 import re
 import signal
-import socket
 import subprocess
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -17,6 +17,46 @@ from urllib.request import Request, urlopen
 ROUTES = {"auth": "auth-service", "academic": "academic-service",
           "registrations": "regist-service", "topics": "topic-service"}
 LOG = logging.getLogger("gateway.discovery")
+
+# DNS APIs have no per-call timeout. A short-lived child lets the parent kill
+# and reap a stalled lookup instead of accumulating abandoned resolver threads.
+IPV4_LOOKUP = """
+import json, socket, sys
+hosts = json.load(sys.stdin)
+result = {host: sorted({entry[4][0] for entry in socket.getaddrinfo(
+    host, None, socket.AF_INET, socket.SOCK_STREAM)}) for host in hosts}
+json.dump(result, sys.stdout)
+"""
+
+
+def resolve_ipv4(hosts, timeout):
+    if not hosts:
+        return {}
+    try:
+        result = subprocess.run([sys.executable, "-c", IPV4_LOOKUP],
+                                input=json.dumps(sorted(hosts)), capture_output=True,
+                                text=True, timeout=timeout, check=True)
+        if len(result.stdout) > 262144:
+            raise ValueError("DNS response too large")
+        resolved = json.loads(result.stdout)
+        if not isinstance(resolved, dict) or set(resolved) != set(hosts):
+            raise ValueError("Invalid DNS response")
+        for addresses in resolved.values():
+            if not isinstance(addresses, list) or not 1 <= len(addresses) <= 256:
+                raise ValueError("No valid IPv4 addresses")
+            for address in addresses:
+                if not isinstance(address, str):
+                    raise ValueError("Invalid IPv4 address")
+                ipaddress.IPv4Address(address)
+        return resolved
+    except (subprocess.SubprocessError, OSError, ValueError, TypeError) as exc:
+        raise OSError("Backend IPv4 resolution failed") from exc
+
+
+def validate_ip_family(value):
+    if value not in {"auto", "ipv4"}:
+        raise ValueError("GATEWAY_UPSTREAM_IP_FAMILY must be auto or ipv4")
+    return value
 
 
 def positive_env(name, default):
@@ -41,10 +81,11 @@ def endpoint(address, port):
     return f"{address}:{port}"
 
 
-def parse_instances(payload, name):
+def parse_instances(payload, name, ip_family="auto", dns_timeout=2):
+    validate_ip_family(ip_family)
     if not isinstance(payload, list) or len(payload) > 1000:
         raise ValueError("Invalid registry response")
-    result = set()
+    candidates = set()
     for item in payload:
         service = item["Service"]
         if service["Service"] != name:
@@ -55,12 +96,31 @@ def parse_instances(payload, name):
         if any(check.get("Status") != "passing" for check in checks):
             continue
         address = service.get("Address") or item["Node"]["Address"]
-        result.add(endpoint(address, service["Port"]))
+        # Validate all registry input before using it in DNS or Nginx config.
+        endpoint(address, service["Port"])
+        candidates.add((address, service["Port"]))
+    if ip_family == "auto":
+        return sorted({endpoint(address, port) for address, port in candidates})
+    result = set()
+    hostnames = set()
+    for address, port in candidates:
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            hostnames.add(address)
+        else:
+            if ip.version == 4:
+                result.add(endpoint(str(ip), port))
+    resolved = resolve_ipv4(hostnames, dns_timeout)
+    for address, port in candidates:
+        for ip in resolved.get(address, []):
+            result.add(endpoint(ip, port))
     return sorted(result)
 
 
 class Discovery:
-    def __init__(self, url, timeout=2, stale_ttl=15, token=None, clock=time.monotonic):
+    def __init__(self, url, timeout=2, stale_ttl=15, token=None, clock=time.monotonic,
+                 ip_family="auto", dns_timeout=2):
         if not url.startswith(("http://", "https://")):
             raise ValueError("CONSUL_URL must use HTTP(S)")
         self.url = url.rstrip("/")
@@ -69,6 +129,10 @@ class Discovery:
         self.token = token
         self.clock = clock
         self.cache = {}
+        self.ip_family = validate_ip_family(ip_family)
+        if not math.isfinite(dns_timeout) or not 0 < dns_timeout <= 10:
+            raise ValueError("GATEWAY_DNS_TIMEOUT_SECONDS must be >0 and <=10")
+        self.dns_timeout = dns_timeout
 
     def fetch(self, name):
         headers = {"Accept": "application/json"}
@@ -79,7 +143,7 @@ class Discovery:
             body = response.read(262145)
             if len(body) > 262144:
                 raise ValueError("Registry response too large")
-            return parse_instances(json.loads(body), name)
+            return parse_instances(json.loads(body), name, self.ip_family, self.dns_timeout)
 
     def refresh_one(self, name):
         try:
@@ -154,7 +218,9 @@ def serve():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     discovery = Discovery(os.getenv("CONSUL_URL", "http://host.docker.internal:8500"),
                           positive_env("CONSUL_TIMEOUT_SECONDS", "2"),
-                          positive_env("CONSUL_STALE_TTL_SECONDS", "15"), os.getenv("CONSUL_TOKEN"))
+                          positive_env("CONSUL_STALE_TTL_SECONDS", "15"), os.getenv("CONSUL_TOKEN"),
+                          ip_family=os.getenv("GATEWAY_UPSTREAM_IP_FAMILY", "auto"),
+                          dns_timeout=positive_env("GATEWAY_DNS_TIMEOUT_SECONDS", "2"))
     interval = positive_env("CONSUL_REFRESH_SECONDS", "3")
     stopping = threading.Event()
     for signum in (signal.SIGTERM, signal.SIGINT):

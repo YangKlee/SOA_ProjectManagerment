@@ -4,7 +4,9 @@ Nginx listens on port `8000`. A Python standard-library worker queries Consul
 `GET /v1/health/service/{name}?passing=true`, validates addresses/ports and renders
 Nginx upstreams from healthy instances. Backend addresses are not fixed in the
 image. Service addresses fall back to the Consul node address only when the
-registered service address is empty. IPv4, IPv6 and DNS hostnames are supported.
+registered service address is empty. Address-family handling is configurable;
+the Docker Desktop Compose setup selects IPv4 to avoid unreachable IPv6 host
+addresses. Automatic mode retains IPv4, IPv6 and DNS hostname support.
 
 | Gateway prefix | Consul service name | Prefix forwarded |
 | --- | --- | --- |
@@ -64,6 +66,34 @@ This setup reuses the existing Consul instance; Compose does not start another.
 | `CONSUL_REFRESH_SECONDS` | `3` | Refresh interval after each polling cycle |
 | `CONSUL_TIMEOUT_SECONDS` | `2` | Per-registry-request socket timeout |
 | `CONSUL_STALE_TTL_SECONDS` | `15` | Maximum age for cached discovery data |
+| `GATEWAY_UPSTREAM_IP_FAMILY` | `ipv4` in Compose; `auto` for standalone worker | Backend address mode: `ipv4` or `auto` |
+| `GATEWAY_DNS_TIMEOUT_SECONDS` | `2` | Total DNS child-process time limit per service lookup; finite, >0 and <=10 seconds |
+
+In `ipv4` mode, Consul-provided hostnames are resolved to IPv4 literals before
+rendering Nginx upstreams. Literal IPv4 addresses pass through; IPv6-only
+instances are excluded. No host IP is hard-coded. Hostnames are deduplicated
+within each service lookup and resolved again during each discovery refresh,
+so changes to their IPv4 addresses can update routes without a container
+restart. Each service's hostname batch uses one short-lived Python process;
+the parent kills and reaps it on timeout, preventing abandoned DNS threads.
+No resolver subprocess is needed for literal addresses. The DNS deadline is
+additional to the Consul request timeout; four service lookups remain concurrent.
+
+DNS failures, missing IPv4 results and DNS timeouts use the existing last-good
+discovery cache only until its stale TTL expires; they never fall back to IPv6
+or a static service address. A successful lookup with only IPv6 literal
+instances yields no upstream immediately. Invalid address-family settings stop
+startup. Use `GATEWAY_UPSTREAM_IP_FAMILY=auto` for deployments that support IPv6;
+in that mode Nginx resolves backend hostnames with its existing behavior and the
+worker's IPv4 DNS deadline is not used.
+
+Docker Desktop may return both A and AAAA records for `host.docker.internal`
+even when the Gateway container cannot reach the IPv6 address. Previously this
+could produce intermittent `Network unreachable` errors and JSON 503 responses
+while Consul still marked the service Passing. Compose's IPv4 mode avoids that
+unreachable address without enabling request retries. After changing these
+settings or the worker code, recreate Gateway with `docker compose up -d --build
+api-gateway`; restarting backend services or Consul is not required.
 
 The four services are queried concurrently. Startup works without Consul and
 returns JSON `503` for unavailable service routes. A successful empty lookup
@@ -99,8 +129,11 @@ docker run --rm --mount "type=bind,source=$($PWD.Path)\tests,target=/tests,reado
 Integration tests run mock registry/backends inside a disposable container,
 without contacting the real Consul, Django servers or project database. They
 exercise actual Nginx reloads, changing instance ports, balancing, JWT/header and
-query forwarding, unavailable services, registry outage/recovery and no write
-replay. CI runs these checks in `.github/workflows/python-tests.yml`.
+query forwarding, unavailable services, registry outage/recovery, dual-stack
+hostnames with unreachable IPv6, IPv6-only instances and no write replay. The
+dual-stack test makes 40 repeated GETs through the real Nginx instance and
+asserts IPv4 literals in the generated upstream configuration. CI runs these
+checks in `.github/workflows/python-tests.yml`.
 
 Use `docker compose stop` to stop this gateway only. No volume or database
 cleanup is required. Production Consul deployment must supply its own security,

@@ -1,66 +1,53 @@
-# Task: Return academic names in topic read responses
+﻿# Task: Manage student/lecturer identity and academic profiles together
 
-Status: Completed after explicit user approval (`ok`). Previous CRUD implementation is preserved.
+Status: Awaiting explicit approval. Read-only schema/source inspection completed.
 
-## Objective and scope
-Replace `major_id` with `major_name` and `advisor_id` with `avisor_name` (exact user-requested spelling) in TopicResponseDTO. Resolve names through academic-service HTTP contracts. Apply this response consistently to list/detail and CRUD write responses on existing and v1 topic routes. Write DTOs and database references remain IDs.
+## Objective
+Allow administrators to create, edit, view and delete a student/lecturer together with their associated Users record, including user-related fields in frontend add/edit popups.
 
-## Inspection evidence
-- Academic MajorResponseDTO already contains `major_id` and nullable `name`.
-- Academic LecturerResponseDTO contains only `lecturer_id` and `department_id`; Lecturers has no name column.
-- FirstName/LastName belong to auth-service's Users table. No published arbitrary-user lookup currently exists.
-- Consequently academic-service must obtain lecturer display names from auth-service through an authenticated contract; it cannot query Users directly. Topic-service will call only academic-service for names.
+## Architecture decision
+Users already exists and is mapped in auth-service. Preserve the repository SOA ownership rule: auth-service alone maps/reads/writes Users; academic-service owns Students/Lecturers and coordinates identity operations through authenticated REST. Do not add a Users ORM model or foreign-key ORM join to academic-service. Existing academic models keep opaque user IDs. This plan achieves the requested record lifecycle without duplicate tables or cross-service ORM access.
 
-## Proposed contracts
-- Add authenticated read-only batch lookup `POST /api/v1/topic-display-names/` in academic-service with `major_ids` and `advisor_ids` (maximum 100 unique IDs per array). Return ID-to-name maps; missing records/names map to null.
-- Add service-authenticated read-only `POST /internal/v1/user-display-names/` in auth-service with up to 100 user IDs. Return only user IDs and display names composed from LastName then FirstName; never password, email, phone or other private fields.
-- Authenticate the internal lookup with a dedicated environment-supplied service token; no configured token means deny all requests. Ordinary end-user JWTs alone cannot access it.
-- Names are nullable. If optional name resolution is unavailable, preserve the main topic response with null names, log safe dependency diagnostics, and do not retry a completed write. Keep existing write-reference validation mandatory.
+## Schema evidence and ownership
+- Users: UserId TEXT PK; LastName, FirstName, Gender, DateOfBirth, Password, Email, Phone, Role, Status, CreatedAt, UpdatedAt. Auth-service ownership.
+- Students: StudentId TEXT PK referencing Users.UserId; MajorId, SpecializationId, AccumulatedCredits, GPA. Academic ownership.
+- Lecturers: LecturerId TEXT PK referencing Users.UserId; FacultyId. Academic ownership.
+- Registrations references Students; Topics references Lecturers and Users; AuditLogs references Users. Foreign keys use NO ACTION, so related business/audit data can prevent deletion.
+- No schema changes, table creation, migrations or production database writes are planned. All mappings remain managed=False. Existing physical SQLite sharing does not grant cross-service table ownership.
 
-## Constraints
-Only task/plan files may change before approval. Preserve ports, gateway prefixes, existing auth login/refresh/me contracts, existing JWT permissions and Topics ownership exception from the previous task. No schema/data changes, migrations, dependencies, containers, frontend changes or live external service calls. No cross-service ORM/table access. Never commit service credentials.
-
-## Acceptance criteria
-- Topic JSON includes major_name and avisor_name and omits major_id/advisor_id; request DTO still accepts IDs.
-- Correct names returned for list/detail and write responses; absent advisor gives null, missing names and dependency outage have documented null fallback.
-- Names are resolved in bounded batches with per-request deduplication, never one HTTP request per topic.
-- Academic reads only its Majors/Lecturers; auth reads only Users; topic reads only Topics.
-- New internal endpoint rejects missing/invalid credentials and ordinary JWT-only callers; output exposes display names only.
-- HTTP calls use Consul discovery when enabled, explicit development URLs otherwise, bounded timeouts/body sizes, no redirects or blind retries, and safe errors.
-- Add/update automated success, DTO, authorization, missing-name and dependency-failure tests; run check/test for all three affected services and diff checks.
-- Update root and affected service READMEs and environment examples.
-
-## Assumptions and risks
-This is a user-requested breaking response change on both existing topic API variants. avisor_name intentionally follows the user's spelling. Names belong to current identity records, not historical snapshots. Auth dependency and service-token configuration expand scope beyond topic-service because academic currently has no lecturer names. Null fallback keeps reads and committed writes available during display-only enrichment failures. No name cache persists between requests; batch IDs are limited to 100 per call and deduplicated within each response. Network call counts scale by batches, which must be documented. Existing unrelated work must be preserved.
-
----
-
-# Current task: Diagnose and fix admin (role 1) login
-Status: Awaiting explicit approval; earlier topic display-name scope remains pending and is not part of this task.
-
-## Objective and scope
-Resolve the reported POST /login/ 401 for an admin account in auth-service. First establish which account and database the running service uses, then apply only an evidence-supported fix.
-
-## Read-only findings
-- Login looks up Users by email then UserId and compares plaintext passwords exactly. It contains no role-based login rejection.
-- The configured repository database is database/DB_ProjectManagerment.db. A mode=ro inspection found 330 Users, all role 3; no role 1 account exists in this file.
-- Existing mocked login tests already use role 1. Password hashes are intentionally unsupported by the documented current policy.
+## Scope
+- Add versioned, service-authenticated auth-service contracts to create/read/update/delete only student/lecturer identities and batch-read safe profiles for admin academic lists.
+- Add versioned composite student/lecturer endpoints in their existing academic apps; preserve legacy academic DTO/routes and public auth login/refresh/me contracts.
+- Use Consul healthy auth-service discovery by default, bounded timeouts, bounded DTO/batch sizes, explicit errors, correlation IDs, throttling and a fail-fast dependency circuit. No automatic write retries or static fallback when discovery is enabled.
+- Require service credentials plus administrator authorization on internal identity management calls; browser never receives service secrets. Prevent auth internal management routes from being exposed through Gateway.
+- Frontend add/edit includes last_name, first_name, gender, date_of_birth, email, phone, status and password. Password required on create, optional/write-only on edit; blank edit password means unchanged. UserId remains tied to academic ID and immutable on edit. Role is server-assigned: student=3, lecturer=2. CreatedAt/UpdatedAt are server-generated and response-only.
+- Return safe user DTO nested with academic DTO; never return stored passwords or password placeholders. Names become available for student/lecturer lists and explicit Search by code/name.
+- Coordinate create/update/delete across REST with validation before changes, local transactions restricted to each service's owned tables, safe compensation where possible, and explicit incomplete-operation responses if a timeout/compensation failure leaves uncertain state.
+- Successful delete means both the academic child row and identity row are deleted, not dropping either table. Reject referenced records rather than cascade-delete registrations/topics/audit logs; prevent deleting the caller, admins or mismatched-role identities.
+- Update frontend forms/API types, backend/frontend tests, READMEs, environment examples and CI only where affected.
 
 ## Constraints
-Preserve public routes, ports, JWT claims, password policy and service boundaries. Do not expose passwords or tokens. Preserve existing uncommitted work and the earlier pending task. No schema/model/migration/dependency/infrastructure changes. No production/shared database writes in the initial investigation.
+- Preserve fixed ports, service names, Gateway prefixes, database schema, unmanaged mappings and auth password/login policy.
+- No importing/querying another service's ORM/private table. No distributed transaction or SQLite write transaction held open across an HTTP call.
+- Do not silently adopt/delete an already-existing unrelated identity. Report conflicts safely.
+- No blind write retry, logging passwords/tokens/personal payloads, exposing internal stack traces or returning successful deletes for partial work.
+- Preserve prior frontend authentication/Gateway/academic work. Do not modify real .env secrets, dependency locks or generated database files.
 
 ## Acceptance criteria
-Identify the account and active database causing the failure; reproduce with an isolated fixture where possible. Any code fix must include regression tests and pass auth-service manage.py check and manage.py test. If the account is absent or credentials differ, report that evidence and propose account provisioning/reset separately before making data changes.
+- Add student/lecturer from frontend creates the matching user with correct role and academic child; successful login works through the unchanged auth contract using the new account.
+- Edit popup preloads current safe identity fields and academic fields, supports identity+academic updates and optional password change without ever disclosing the previous password.
+- Delete removes both records when unreferenced; linked business/audit records cause safe conflict feedback and remain intact. UI removes rows only on confirmed full success.
+- Students/lecturers can be searched explicitly by code or returned name.
+- Non-admin writes and unauthorized internal calls fail; arbitrary-user profile access is not exposed to browser clients.
+- Validate duplicate IDs/email/phone and relationships against the actual schema, date format and DTO requirements. Full names use documented first/last-name fields. Gender/status allowed values are verified from existing contracts/schema before introducing enums.
+- Tests cover create/edit/delete, identity/academic failures, partial outcomes/compensation, timeout uncertainty, duplicate requests, sensitive-field exclusion, authorization and existing auth/academic regressions.
+- Relevant auth/academic Django check/test, Gateway tests/integration and frontend lint/test/build pass.
 
 ## Assumptions and risks
-The running server may use a different checkout/database, or the admin may not have been provisioned. Identifier and active database confirmation are needed; never request a password in chat. A role bypass cannot repair missing credentials. Do not claim the reported account is fixed until verified.
-
-## Delivery and verification
-- Topic response fields are major_name and avisor_name; request DTO and database IDs remain unchanged. All list/detail and successful write responses use the same enrichment.
-- Added academic read-only batch name endpoint and auth service-token-only display-name endpoint. No cross-service table/model access.
-- Added 64 KiB JSON body limits, 100-entry batch limits, process-cache throttles (120/min), bounded discovery/HTTP, redirect protection and separate display lookup circuits with null fallback.
-- Added/updated endpoint, permission, DTO, batch/deduplication, missing-name, timeout, malformed-response, circuit, safe-error and committed-write fallback tests.
-- Checks pass for all three services. Full test results: topic-service 37, academic-services 116, auth-service 23; all 176 tests passed.
-- Scoped git diff --check and whitespace checks of new Python files passed. No database, model mapping, migrations, dependencies, gateway or CI changes in this task. Existing auth tests regenerated tracked bytecode; that artifact was restored to its original version.
-- Existing frontend work was preserved. No real service credentials were created or modified, and no live external calls were made. For runtime lecturer names set matching DISPLAY_NAMES_SERVICE_TOKEN in auth and academic; missing credentials produce null advisor names.
-- Live gateway/Consul/academic/auth integration was not exercised. Per-call timeouts and per-process circuits/quotas are not distributed total-deadline controls.
+- The user intends deleting records, not dropping the Users/Students/Lecturers tables.
+- Expanding auth-service and internal Gateway access policy is necessary to maintain the repository ownership rules; these changes are included for approval.
+- REST cannot provide a single ACID transaction over both services. Compensation and explicit recovery errors reduce risk; process crashes or unresolved timeouts can require administrator reconciliation. This task does not introduce a broker, durable saga journal or schema changes.
+- Existing NO ACTION references can prevent deleting Users even after child deletion; validate/compensate safely and do not erase audit history.
+- Existing plaintext password policy is preserved for compatibility; no password hash migration is included.
+- New service credentials must be supplied consistently via environment by the operator; never generate/commit real credentials in this task.
+- Tests use isolated temporary SQLite/mock HTTP; no real account creation/deletion for verification.

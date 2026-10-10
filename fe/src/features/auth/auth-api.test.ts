@@ -1,7 +1,7 @@
 import MockAdapter from 'axios-mock-adapter'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { apiClient, setAccessToken } from '../../services/api-client'
-import { loginRequest } from './auth-api'
+import { currentUserRequest, loginRequest } from './auth-api'
 
 const validResponse = {
   access: 'access-test-token', refresh: 'refresh-test-token', token_type: 'Bearer',
@@ -15,6 +15,18 @@ describe('Login API contract', () => {
     mock = new MockAdapter(apiClient, { onNoMatch: 'throwException' })
   })
   afterEach(() => mock.restore())
+
+  it('validates /me identity and discards private or unrelated profile fields', async () => {
+    setAccessToken('saved-access')
+    mock.onGet('/auth/me/').reply(200, { ...validResponse.user, email: 'private', password: 'private' })
+    expect(await currentUserRequest()).toEqual(validResponse.user)
+    expect(mock.history.get[0].headers?.Authorization).toBe('Bearer saved-access')
+  })
+
+  it.each([null, {}, { ...validResponse.user, role: 9 }, { ...validResponse.user, user_id: '' }])('rejects malformed current-user profile %#', async (data) => {
+    mock.onGet('/auth/me/').reply(200, data)
+    await expect(currentUserRequest()).rejects.toMatchObject({ kind: 'unknown' })
+  })
 
   it('sends identifier and exact password to the Gateway and retains only safe session data', async () => {
     mock.onPost('/auth/login/').reply(200, validResponse)
